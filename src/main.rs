@@ -7,8 +7,10 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()>{
-    //install default tls provider for aws-lc-rs
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    // Install default crypto provider for rustls before any TLS connections
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
     
     let symbol = "BTCUSDT";
 
