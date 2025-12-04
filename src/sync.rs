@@ -19,22 +19,33 @@ impl SyncState {
         self.last_update_id = Some(last_update_id);
     }
 
-    //return true if delta should be applied
-    pub fn process_delta(&mut self, update: DepthUpdate) -> Result<bool>{
+    //return list of updates to apply
+    pub fn process_delta(&mut self, update: DepthUpdate) -> Result<Vec<DepthUpdate>>{
         let Some(last_id) = self.last_update_id else {
+            //still waiting for snapshot lets buffer this update
             self.buffer.push(update);
-            return Ok(false);
+            return Ok(Vec::new());
         };
 
         //check sync condition U <= lastUpdateId + 1 <= u
         if update.first_update_id <= last_id + 1 && last_id + 1 <= update.final_update_id {
-            self.buffer.clear();
-            return Ok(true);
+            //apply buffered data first
+            let mut to_apply = vec![update];
+            self.buffer.sort_by_key(|u| u.first_update_id);
+            let buffered = self.drain_buffer();
+
+            for buffered_update in buffered {
+                if buffered_update.first_update_id > last_id {
+                    to_apply.push(buffered_update);
+                }
+            }
+
+            return Ok(to_apply);
         }
 
         if update.final_update_id <= last_id {
             //dont need this is old data
-            return Ok(false);
+            return Ok(Vec::new());
         }
 
         if update.first_update_id > last_id + 1 {
@@ -44,7 +55,7 @@ impl SyncState {
 
         //this update is future data, we shan't update yet and shall wait for snapshot_id + 1
         self.buffer.push(update);
-        Ok(false)
+        Ok(Vec::new())
     }
 
     //caller takes ownership of vec, leaving an empty vec in the struct
