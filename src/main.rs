@@ -18,14 +18,14 @@ async fn main() -> Result<()>{
 
 
     println!("Connecting to WebSocket...");
-    let mut ws_stream = stream::connect_depth_stream(symbol).await?;
+    let ws_stream = stream::connect_depth_stream(symbol).await?;
     
     println!("Fetching snapshot...");
     let snapshot = snapshot::fetch_snapshot(symbol, 1).await?;
     println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
     
     let mut sync = sync::SyncState::new();
-    sync.set_snapshot(snapshot.last_update_id);
+    sync.set_last_update_id(snapshot.last_update_id);
 
     println!("Processing deltas!");
     tokio::pin!(ws_stream);
@@ -36,8 +36,8 @@ async fn main() -> Result<()>{
                 let final_id = update.final_update_id;
                 match sync.process_delta(update) {
                     Ok(true) => {
-                        println!("successfully going to update! U={}, u={}", first_id, final_id);
-                        sync.set_snapshot(final_id);
+                        println!("successfully going to update! U={}, u={}. update count is {}", first_id, final_id, final_id-first_id);
+                        sync.set_last_update_id(final_id);
 
                     }
                     Ok(false) => {
