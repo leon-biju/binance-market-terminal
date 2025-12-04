@@ -1,8 +1,10 @@
 mod binance;
 mod snapshot;
 mod stream;
+mod sync;
 
 use anyhow::Result;
+use futures_util::StreamExt;
 
 
 #[tokio::main]
@@ -22,7 +24,38 @@ async fn main() -> Result<()>{
     let snapshot = snapshot::fetch_snapshot(symbol, 1).await?;
     println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
     
-    
+    let mut sync = sync::SyncState::new();
+    sync.set_snapshot(snapshot.last_update_id);
+
+    println!("Processing deltas!");
+    tokio::pin!(ws_stream);
+    while let Some(result) = ws_stream.next().await {
+        match result {
+            Ok(update) => {
+                let first_id = update.first_update_id;
+                let final_id = update.final_update_id;
+                match sync.process_delta(update) {
+                    Ok(true) => {
+                        println!("successfully going to update! U={}, u={}", first_id, final_id);
+                        sync.set_snapshot(final_id);
+
+                    }
+                    Ok(false) => {
+                        //buffered or dropped just keep going
+                    }
+                    Err(e) => {
+                        //todo: resync logic for now just crash and burn
+                        eprintln!("DESYNC DETECTED!!!: {}", e);
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error receiving message: {}", e);
+                break;
+            }
+        }
+    }
     
     
     
