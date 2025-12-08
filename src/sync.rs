@@ -19,39 +19,46 @@ impl SyncState {
         self.last_update_id = Some(last_update_id);
     }
 
-    //return list of updates to apply
-    pub fn process_delta(&mut self, update: DepthUpdate) -> Result<Vec<DepthUpdate>>{
+    // returns list of updates to apply
+    pub fn process_delta(&mut self, update: DepthUpdate) -> Result<Option<Vec<DepthUpdate>>> {
         let Some(last_id) = self.last_update_id else {
-            //still waiting for snapshot lets buffer this update
             self.buffer.push(update);
-            return Ok(Vec::new());
+            return Ok(None);
         };
-        //check sync condition U <= lastUpdateId + 1 <= u
-        if update.first_update_id <= last_id + 1 && last_id + 1 <= update.final_update_id {
-            let mut to_apply = self.drain_buffer();
-            to_apply.push(update);
-            to_apply.sort_by_key(|u| u.first_update_id);
 
-            if let Some(last) = to_apply.last() {
-                self.set_last_update_id(last.final_update_id);
-            }
-
-            return Ok(to_apply);
-        }
-
+        // discard if fully old
         if update.final_update_id <= last_id {
-            //dont need this is old data
-            return Ok(Vec::new());
+            return Ok(None);
         }
 
-        if update.first_update_id > last_id + 1 {
-            //fuck missed an update lets crash the whole thing
-            bail!("Gap between updates! expected {}, got {}", last_id + 1, update.first_update_id)
+        // collect buffered + current, oldest first
+        let mut candidates = self.drain_buffer();
+        candidates.push(update);
+        candidates.sort_by_key(|u| u.first_update_id);
+
+        let mut to_apply = Vec::new();
+        let mut expected = last_id + 1;
+
+        for u in candidates {
+            // skip stale chunks
+            if u.final_update_id < expected {
+                continue;
+            }
+            // require contiguity
+            if u.first_update_id > expected {
+                //To handle
+                bail!("Gap between updates! expected {}, got {}", expected, u.first_update_id);
+            }
+            // ok to apply
+            to_apply.push(u);
+            expected = to_apply.last().unwrap().final_update_id + 1;
         }
 
-        //this update is future data, we shan't update yet and shall wait for snapshot_id + 1
-        self.buffer.push(update);
-        Ok(Vec::new())
+        if let Some(last) = to_apply.last() {
+            self.set_last_update_id(last.final_update_id);
+        }
+
+        Ok(Some(to_apply))
     }
 
     //caller takes ownership of vec, leaving an empty vec in the struct
