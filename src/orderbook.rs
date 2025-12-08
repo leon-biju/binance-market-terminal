@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use rust_decimal::Decimal;
 use crate::binance::{DepthSnapshot, DepthUpdate};
 
+#[derive(Debug)]
 pub struct OrderBook {
     bids: BTreeMap<Decimal, Decimal>, // price -> quantity
     asks: BTreeMap<Decimal, Decimal>,
