@@ -36,7 +36,6 @@ async fn main() -> Result<()>{
     tokio::pin!(ws_stream);
 
     while let Some(result) = ws_stream.next().await {
-
         match result {
             Ok(update) => {
                 handle_message(update, &mut sync, &mut book)?;
