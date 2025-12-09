@@ -36,15 +36,9 @@ async fn main() -> Result<()>{
     tokio::pin!(ws_stream);
 
     while let Some(result) = ws_stream.next().await {
-        match result {
-            Ok(update) => {
-                handle_message(update, &mut sync, &mut book)?;
-            }
-            Err(e) => {
-                eprintln!("Error receiving message: {}", e);
-                break;
-            }
-        }
+        let update = result?;
+        handle_message(update, &mut sync, &mut book)?;
+        
 
         break; //TEMPORARY DEBUG STATEMENT to only listen to one message
     }
@@ -61,15 +55,12 @@ async fn main() -> Result<()>{
 fn handle_message(update: DepthUpdate, sync: &mut sync::SyncState, book: &mut orderbook::OrderBook) -> Result<()>{
     let first_id = update.first_update_id;
     let final_id = update.final_update_id;
-    match sync.process_delta(update)? {
-        Some(updates) => {
-            for update in updates {
-                println!("Applying update! U={}, u={}", first_id, final_id);
-                //todo: apply update to orderbook
-                book.apply_update(&update);
-            }
+    if let Some(updates) = sync.process_delta(update)? {
+        for update in updates {
+            println!("Applying update! U={}, u={}", first_id, final_id);
+
+            book.apply_update(&update);
         }
-        None => {}
     }
     Ok(())
 }
