@@ -7,6 +7,8 @@ mod orderbook;
 use anyhow::Result;
 use futures_util::StreamExt;
 
+use crate::binance::DepthUpdate;
+
 
 #[tokio::main]
 async fn main() -> Result<()>{
@@ -28,36 +30,47 @@ async fn main() -> Result<()>{
     let mut sync = sync::SyncState::new();
     sync.set_last_update_id(snapshot.last_update_id);
 
+    let mut book = orderbook::OrderBook::from_snapshot(snapshot);
+    
     println!("Processing deltas!");
     tokio::pin!(ws_stream);
+
     while let Some(result) = ws_stream.next().await {
+
         match result {
             Ok(update) => {
-                let first_id = update.first_update_id;
-                let final_id = update.final_update_id;
-                match sync.process_delta(update) {
-                    Ok(updates) => {
-                        for update in updates {
-                            println!("Applying update! U={}, u={}", first_id, final_id);
-                            //todo: apply update to orderbook
-                        }
-
-                    }
-                    Err(e) => {
-                        //todo: resync logic for now just crash and burn
-                        eprintln!("DESYNC DETECTED!!!: {}", e);
-                        break;
-                    }
-                }
+                handle_message(update, &mut sync, &mut book)?;
             }
             Err(e) => {
                 eprintln!("Error receiving message: {}", e);
                 break;
             }
         }
+
+        break; //TEMPORARY DEBUG STATEMENT to only listen to one message
     }
     
+
+    println!("{:?}", book);
     
     
+    Ok(())
+}
+
+
+
+fn handle_message(update: DepthUpdate, sync: &mut sync::SyncState, book: &mut orderbook::OrderBook) -> Result<()>{
+    let first_id = update.first_update_id;
+    let final_id = update.final_update_id;
+    match sync.process_delta(update)? {
+        Some(updates) => {
+            for update in updates {
+                println!("Applying update! U={}, u={}", first_id, final_id);
+                //todo: apply update to orderbook
+                book.apply_update(&update);
+            }
+        }
+        None => {}
+    }
     Ok(())
 }
