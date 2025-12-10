@@ -20,9 +20,3 @@ pub struct DepthUpdate {
     pub b: Vec<[String; 2]>, // bids
     pub a: Vec<[String; 2]>, // asks
 }
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum StreamMessage {
-    DepthUpdate { data: DepthUpdate },
-}
