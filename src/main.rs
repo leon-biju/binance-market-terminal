@@ -30,7 +30,11 @@ async fn main() -> Result<()>{
     let mut sync = sync::SyncState::new();
     sync.set_last_update_id(snapshot.last_update_id);
 
-    let mut book = orderbook::OrderBook::from_snapshot(snapshot);
+    // get tick size and step size
+    let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
+
+
+    let mut book = orderbook::OrderBook::from_snapshot(snapshot, tick_size, step_size);
     
     println!("Processing deltas!");
     tokio::pin!(ws_stream);
@@ -53,7 +57,7 @@ async fn main() -> Result<()>{
                 println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
                 sync = sync::SyncState::new();
                 sync.set_last_update_id(snapshot.last_update_id);
-                book = orderbook::OrderBook::from_snapshot(snapshot);
+                book = orderbook::OrderBook::from_snapshot(snapshot, tick_size, step_size);
             }
             sync::SyncOutcome::NoUpdates => {
                 println!("No updates!");
