@@ -871,6 +871,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures-util",
+ "num-traits",
  "reqwest",
  "rust_decimal",
  "rustls",
