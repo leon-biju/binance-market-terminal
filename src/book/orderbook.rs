@@ -4,15 +4,19 @@ use crate::binance::types::{DepthSnapshot, DepthUpdate};
 
 #[derive(Debug)]
 pub struct OrderBook {
+    tick_size: Decimal,
+    step_size: Decimal,
     bids: BTreeMap<Decimal, Decimal>, // price -> quantity
     asks: BTreeMap<Decimal, Decimal>,
 }
 
 impl OrderBook {
-    pub fn from_snapshot(snapshot: DepthSnapshot) -> Self {
+    pub fn from_snapshot(snapshot: DepthSnapshot, tick_size: Decimal, step_size: Decimal) -> Self {
         let mut book = Self {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
+            tick_size: tick_size,
+            step_size: step_size,
         };
         
         for [price, qty] in snapshot.bids {
