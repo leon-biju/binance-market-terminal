@@ -13,7 +13,6 @@ pub enum SyncOutcome {
 }
 
 impl SyncState {
-    
     pub fn new() -> Self {
         Self {
             last_update_id: None,
@@ -27,8 +26,6 @@ impl SyncState {
 
     // returns list of updates to apply
     pub fn process_delta(&mut self, update: DepthUpdate) -> SyncOutcome {
-
-        
         let Some(last_id) = self.last_update_id else {
             self.buffer.push(update);
             return SyncOutcome::NoUpdates;
@@ -54,10 +51,10 @@ impl SyncState {
             }
             // require contiguity
             if u.first_update_id > expected {
-                //To handle
                 return SyncOutcome::GapBetweenUpdates;
             }
-            // ok to apply
+
+            // we are ok to apply
             to_apply.push(u);
             expected = to_apply.last().unwrap().final_update_id + 1;
         }
