@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::binance::DepthSnapshot;
+use crate::binance::types::DepthSnapshot;
 
 const DEPTH_SNAPSHOT_URL: &str = "https://api.binance.com/api/v3/depth";
 

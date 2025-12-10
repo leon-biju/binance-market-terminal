@@ -1,11 +1,11 @@
 mod binance;
-mod snapshot;
-mod stream;
-mod sync;
-mod orderbook;
+mod book;
 
 use anyhow::Result;
 use futures_util::StreamExt;
+
+use crate::binance::{stream, snapshot};
+use crate::book::{orderbook, sync};
 
 
 #[tokio::main]

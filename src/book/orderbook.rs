@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use rust_decimal::Decimal;
-use crate::binance::{DepthSnapshot, DepthUpdate};
+use crate::binance::types::{DepthSnapshot, DepthUpdate};
 
 #[derive(Debug)]
 pub struct OrderBook {

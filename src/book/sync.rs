@@ -1,4 +1,4 @@
-use crate::binance::DepthUpdate;
+use crate::binance::types::DepthUpdate;
 
 pub struct SyncState {
     last_update_id: Option<u64>,
