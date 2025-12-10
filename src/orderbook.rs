@@ -52,11 +52,19 @@ impl OrderBook {
         }
     }
     
-    pub fn highest_bid(&self) -> Option<(&Decimal, &Decimal)> {
-        self.bids.iter().next_back()
-    }
     
-    pub fn lowest_ask(&self) -> Option<(&Decimal, &Decimal)> {
-        self.asks.iter().next()
+    pub fn best_bid(&self) -> Option<(&Decimal, &Decimal)> {
+        self.bids.iter().next_back() // highest price
+    }
+
+    pub fn best_ask(&self) -> Option<(&Decimal, &Decimal)> {
+        self.asks.iter().next() // lowest price
+    }
+
+    pub fn spread(&self) -> Option<Decimal> {
+        match (self.best_bid(), self.best_ask()) {
+            (Some((bid, _)), Some((ask, _))) => Some(ask - bid),
+            _ => None,
+        }
     }
 }
