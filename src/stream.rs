@@ -17,3 +17,5 @@ pub async fn connect_depth_stream(symbol: &str) -> Result<impl StreamExt<Item = 
         }
     }))
 }
+
+//TODO: Implement connect_trade_stream for trade views
