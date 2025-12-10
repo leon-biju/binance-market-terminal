@@ -13,7 +13,7 @@ pub async fn fetch_snapshot(symbol: &str, limit: u16) -> Result<DepthSnapshot> {
         let msg = json_value.get("msg")
             .and_then(|m| m.as_str())
             .unwrap_or("Unknown error");
-        anyhow::bail!("Binance API error: {}", msg);
+        anyhow::bail!("Binance API error for symbol \"{}\": {}", symbol, msg);
     }
     
     let snapshot: DepthSnapshot = serde_json::from_value(json_value)?;

@@ -14,15 +14,17 @@ async fn main() -> Result<()>{
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
-    
-    let symbol = "BTCUSDT";
 
+    let symbol = std::env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("Usage: orderbook-engine <symbol>");
+        std::process::exit(1);
+    });
 
     println!("Connecting to WebSocket...");
-    let ws_stream = stream::connect_depth_stream(symbol).await?;
+    let ws_stream = stream::connect_depth_stream(&symbol).await?;
     
     println!("Fetching snapshot...");
-    let snapshot = snapshot::fetch_snapshot(symbol, 1000).await?;
+    let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
     println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
     
     let mut sync = sync::SyncState::new();
@@ -32,7 +34,6 @@ async fn main() -> Result<()>{
     
     println!("Processing deltas!");
     tokio::pin!(ws_stream);
-
 
     // main listening loop   
     while let Some(result) = ws_stream.next().await {
@@ -48,7 +49,7 @@ async fn main() -> Result<()>{
             }
             sync::SyncOutcome::GapBetweenUpdates => {
                 println!("Gap detected; refetching snapshot and resetting state");
-                let snapshot = snapshot::fetch_snapshot(symbol, 1000).await?;
+                let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
                 println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
                 sync = sync::SyncState::new();
                 sync.set_last_update_id(snapshot.last_update_id);
