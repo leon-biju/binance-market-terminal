@@ -39,13 +39,13 @@ async fn main() -> Result<()>{
         let update = result?;
         handle_message(update, &mut sync, &mut book)?;
         
-
-        break; //TEMPORARY DEBUG STATEMENT to only listen to one message
+        println!("{:?}", book.top_n_depth(2));
+        //break; //TEMPORARY DEBUG STATEMENT to only listen to one message
     }
     
 
+
     
-    println!("{:?}", book.top_n_depth(2));
     
     
     Ok(())
