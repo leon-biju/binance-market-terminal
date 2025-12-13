@@ -28,6 +28,7 @@ impl SyncState {
     // returns list of updates to apply
     pub fn process_delta(&mut self, update: DepthUpdate) -> SyncOutcome {
         let Some(last_id) = self.last_update_id else {
+            //buffers ws updates if haven't processed the depthsnapshot yet
             self.buffer.push(update);
             return SyncOutcome::NoUpdates;
         };

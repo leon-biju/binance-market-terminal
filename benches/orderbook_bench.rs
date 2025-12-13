@@ -65,5 +65,7 @@ fn bench_query_functions(c: &mut Criterion) {
     });
 }
 
+//todo: add a stress test massive queue of updates to apply at once use sync state etc.
+
 criterion_group!(benches, bench_from_snapshot, bench_apply_updates, bench_query_functions);
 criterion_main!(benches);
