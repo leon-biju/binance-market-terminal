@@ -34,7 +34,7 @@ fn bench_apply_updates(c: &mut Criterion) {
         .map(|i| DepthUpdate::fake_update(i as u64, LEVELS_PER_UPDATE))
         .collect();
 
-    c.bench_function(&format!("apply_updates_{}_updates_per_batch_{}_levels_per_update", UPDATES_PER_BATCH, LEVELS_PER_UPDATE), |b| {
+    c.bench_function(&format!("apply_updates_{}x{}", UPDATES_PER_BATCH, LEVELS_PER_UPDATE), |b| {
     b.iter_batched_ref(
         || OrderBook::from_snapshot(snapshot.clone(), &scaler),
         |book| {
@@ -65,7 +65,30 @@ fn bench_query_functions(c: &mut Criterion) {
     });
 }
 
-//todo: add a stress test massive queue of updates to apply at once use sync state etc.
+fn bench_high_churn(c: &mut Criterion) {
+    // Simulate high-frequency trading: many small updates
+    let snapshot = DepthSnapshot::fake_snapshot(SNAPSHOT_LEVELS);
+    let scaler = Scaler::new(
+        Decimal::from_str("0.01").unwrap(),
+        Decimal::from_str("0.01").unwrap()
+    );
 
-criterion_group!(benches, bench_from_snapshot, bench_apply_updates, bench_query_functions);
+    let updates: Vec<DepthUpdate> = (0..1000)
+        .map(|i| DepthUpdate::fake_update(i as u64, 10)) // small updates
+        .collect();
+
+    c.bench_function("apply_updates_high_churn_1000x10", |b| {
+        b.iter_batched_ref(
+            || OrderBook::from_snapshot(snapshot.clone(), &scaler),
+            |book| {
+                for up in &updates {
+                    book.apply_update(black_box(up), &scaler);
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+criterion_group!(benches, bench_from_snapshot, bench_apply_updates, bench_query_functions, bench_high_churn);
 criterion_main!(benches);
