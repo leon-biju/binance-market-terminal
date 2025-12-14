@@ -44,7 +44,7 @@ This design means the engine can process updates at full speed while consumers r
     - Gives you constant-time lookups for top-of-book
 
 ### Gap Recovery
-When the sync layer detects a gap in update IDs, it triggers an async snapshot fetch via a command channel. The HTTP request happens in a background task so the engine can continue processing WebSocket messages. Once the new snapshot arrives, it resets the sync state and swaps in a fresh book. The command channel is prioritized using biased selection to ensure snapshot updates apply immediately.
+When the sync layer detects a gap in update IDs, it triggers an async snapshot fetch via a command channel. The slowish HTTP request happens in a background task so the engine can continue processing WebSocket messages. Once the new snapshot arrives, it resets the sync state and swaps in a fresh book. The command channel is prioritised using biased selection to ensure snapshot updates apply immediately.
 
 
 ## Performance Results Summary
