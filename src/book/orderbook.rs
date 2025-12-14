@@ -5,7 +5,7 @@ use crate::{binance::{types::{DepthSnapshot, DepthUpdate}}};
 use crate::book::scaler;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderBook {
     bids: BTreeMap<u64, u64>,
     asks: BTreeMap<u64, u64>,
