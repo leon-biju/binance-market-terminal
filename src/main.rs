@@ -1,11 +1,11 @@
 mod binance;
 mod book;
+mod engine;
 
 use anyhow::Result;
-use futures_util::StreamExt;
-
-use crate::binance::{stream, snapshot};
-use crate::book::{orderbook, scaler, sync};
+use crate::binance::snapshot;
+use crate::book::scaler;
+use crate::engine::engine::MarketDataEngine;
 
 
 #[tokio::main]
@@ -20,61 +20,39 @@ async fn main() -> Result<()>{
         std::process::exit(1);
     });
 
-    println!("Connecting to WebSocket...");
-    let ws_stream = stream::connect_depth_stream(&symbol).await?;
-    
-    println!("Fetching snapshot...");
+    println!("Fetching initial snapshot...");
     let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
     println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
     
-    let mut sync = sync::SyncState::new();
-    sync.set_last_update_id(snapshot.last_update_id);
-
-    // get tick size and step size
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let mut book = orderbook::OrderBook::from_snapshot(snapshot, &scaler);
+    let (engine, _command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler);
     
-    println!("Processing deltas!");
-    tokio::pin!(ws_stream);
-
-    // main listening loop   
-    while let Some(result) = ws_stream.next().await {
-
-        let update = result?;
-
-        match sync.process_delta(update) {
-            sync::SyncOutcome::Updates(updates) => {
-                for update in updates {
-                    //println!("Applying update! U={}, u={}", update.first_update_id, update.final_update_id);
-                    book.apply_update(&update, &scaler);
+    // spawn a task to periodically read and display the orderbook
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            
+            let book_arc = state_clone.current_book.load();
+            let is_syncing = *state_clone.is_syncing.read().await;
+            
+            if is_syncing {
+                println!("Status: Syncing...");
+            } else {
+                let (bids, asks) = book_arc.top_n_depth(2);
+                println!("Top 2 levels - Bids: {:?}, Asks: {:?}", bids, asks);
+                
+                if let (Some((bid_price, _)), Some((ask_price, _))) = (book_arc.best_bid(), book_arc.best_ask()) {
+                    println!("Best Bid: {}, Best Ask: {}, Spread: {}", bid_price, ask_price, ask_price - bid_price);
                 }
             }
-            sync::SyncOutcome::GapBetweenUpdates => {
-                println!("Gap detected; refetching snapshot and resetting state");
-                let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
-                println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
-                sync = sync::SyncState::new();
-                sync.set_last_update_id(snapshot.last_update_id);
-                book = orderbook::OrderBook::from_snapshot(snapshot, &scaler);
-            }
-            sync::SyncOutcome::NoUpdates => {
-                println!("No updates!");
-            }
         }
-
-        let (bids, asks) = book.top_n_depth(2);
-        let bids_scaled: Vec<_> = bids.iter().map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty))).collect();
-        let asks_scaled: Vec<_> = asks.iter().map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty))).collect();
-        println!("Bids: {:?}, Asks: {:?}", bids_scaled, asks_scaled);
-        //break; //TEMPORARY DEBUG STATEMENT to only listen to one message
-    }
+    });
     
-
-
-    
-    
+    // Run the engine (this blocks until shutdown)
+    engine.run().await?;
     
     Ok(())
 }
