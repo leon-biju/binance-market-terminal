@@ -4,13 +4,23 @@ A high-performance L2 orderbook built in Rust. It ingests Binance depth snapshot
 
 ## Features
  - L2 order book (price -> aggregated quantity)
+ - Lock-free reads via atomic pointer swapping
  - Handles gaps between updates and applies them in order
  - Constant time top-of-book queries
+ - Non-blocking snapshot recovery
  - Fully benchmarked using Criterion
 
 ---
 
 ## Architecture Overview
+
+### Engine Design
+The engine uses a single-writer, multiple-readers pattern optimized for high-frequency updates. It maintains two separate orderbook instances:
+
+- **Hot Path** - A mutable workspace where updates are applied rapidly without any locks
+- **Published Snapshot** - An immutable book exposed via `ArcSwap` for lock-free TUI reads
+
+This design means the engine can process updates at full speed while consumers read the orderbook with zero synchronization overhead. Updates are applied in-place to the workspace, then cloned and atomically swapped into the shared pointer when ready.
 
 ### Data Flow
 1. **Initial Snapshot**
@@ -31,7 +41,10 @@ A high-performance L2 orderbook built in Rust. It ingests Binance depth snapshot
 4. **Order Book**
     - Applies updates atomically
     - Keeps track of bid and ask price levels
-    - Gives you constant-time lookups for top-of-book (verify this?)
+    - Gives you constant-time lookups for top-of-book
+
+### Gap Recovery
+When the sync layer detects a gap in update IDs, it triggers an async snapshot fetch via a command channel. The slowish HTTP request happens in a background task so the engine can continue processing WebSocket messages. Once the new snapshot arrives, it resets the sync state and swaps in a fresh book. The command channel is prioritised using biased selection to ensure snapshot updates apply immediately.
 
 
 ## Performance Results Summary
