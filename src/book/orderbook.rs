@@ -94,4 +94,28 @@ impl OrderBook {
 
         (best_n_bids, best_n_asks)
     }
+
+    pub fn imbalance_ratio(&self, levels: usize) -> Option<f64> {
+        let (bids, asks) = self.top_n_depth(levels);
+
+        if bids.is_empty() || asks.is_empty() {
+            return None;
+        }
+        
+        let bid_volume: u64 = bids.iter()
+            .map(|(_, qty)| *qty)
+            .sum();
+
+        let ask_volume: u64 = asks.iter()
+            .map(|(_, qty)| *qty)
+            .sum();
+
+        let total_volume = bid_volume + ask_volume;
+
+        if total_volume == 0 {
+            return None;
+        }
+
+        Some(bid_volume as f64 / total_volume as f64)
+    } 
 }
