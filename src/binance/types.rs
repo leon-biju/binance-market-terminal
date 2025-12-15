@@ -10,19 +10,6 @@ pub struct DepthSnapshot {
     pub asks: Vec<[String; 2]>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DepthUpdate {
-    #[serde(rename = "E")]
-    pub event_time: u64,
-    pub s: String, // symbol
-    #[serde(rename = "U")]
-    pub first_update_id: u64,
-    #[serde(rename = "u")]
-    pub final_update_id: u64,
-    pub b: Vec<[String; 2]>, // bids
-    pub a: Vec<[String; 2]>, // asks
-}
-
 impl DepthSnapshot {
     // generate fake snapshot for testing
     pub fn fake_snapshot(n_levels: usize) -> Self {
@@ -58,6 +45,19 @@ impl DepthSnapshot {
     }
 }
 
+
+#[derive(Debug, Deserialize)]
+pub struct DepthUpdate {
+    #[serde(rename = "E")]
+    pub event_time: u64,
+    pub s: String, // symbol
+    #[serde(rename = "U")]
+    pub first_update_id: u64,
+    #[serde(rename = "u")]
+    pub final_update_id: u64,
+    pub b: Vec<[String; 2]>, // bids
+    pub a: Vec<[String; 2]>, // asks
+}
 
 impl DepthUpdate {
     // generate fake update for testing
@@ -111,4 +111,22 @@ impl DepthUpdate {
             a: asks
         }
     }
+}
+
+
+#[derive(Debug, Deserialize)]
+pub struct Trade {
+    #[serde(rename = "E")]
+    pub event_time: u64,
+    pub s: String, // symbol
+    #[serde(rename = "t")]
+    pub trade_id: u64,
+    #[serde(rename = "p")]
+    pub price: Decimal,
+    #[serde(rename = "q")]
+    pub quantity: Decimal,
+    #[serde(rename = "T")]
+    pub trade_time: u64,
+    #[serde(rename = "m")]
+    pub is_buyer_maker: bool,
 }
