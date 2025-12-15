@@ -3,19 +3,45 @@ mod book;
 mod engine;
 
 use anyhow::Result;
+use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use crate::binance::snapshot;
 use crate::book::scaler;
 use crate::engine::engine::MarketDataEngine;
 
+use crate::binance::stream::connect_trade_stream;
+
+
 
 #[tokio::main]
-async fn main() -> Result<()>{
+async fn main() -> Result<()> {
     // Install default crypto provider for rustls before any TLS connections
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
+
+    //this is temporary just while developing other stuff
+    let symbol = std::env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("Usage: orderbook-engine <symbol>");
+        std::process::exit(1);
+    });
+    let ws_stream = connect_trade_stream(&symbol).await?;
+    tokio::pin!(ws_stream);
+    while let Some(msg) = ws_stream.next().await {
+        let m = msg.unwrap();
+        println!("{:?}", m);
+
+    }
+
+
+    //run_depth_book_stuff().await?;
+
+    Ok(())
+}
+
+async fn run_depth_book_stuff() -> Result<()> {
+    
     let symbol = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("Usage: orderbook-engine <symbol>");
         std::process::exit(1);
