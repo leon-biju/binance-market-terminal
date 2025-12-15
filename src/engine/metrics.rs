@@ -42,12 +42,37 @@ impl MarketMetrics {
         // magic 10 value here todo: replace this
         let imbalance_ratio = book.imbalance_ratio(10).map(Decimal::from_f64_retain).flatten();
         
-        //holy temp values btw
-        let last_price = None;
-        let last_qty = None;
-        let volume_1m = Decimal::ZERO;
-        let trade_count_1m = 0;
-        let vwap_1m = None;
+        // Compute trade metrics from recent_trades
+        let last_trade = recent_trades.back();
+        let last_price = last_trade.map(|t| t.price);
+        let last_qty = last_trade.map(|t| t.quantity);
+        
+        // Calculate metrics for last 1 minute
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        
+        let one_minute_ago = now - 60_000; // 60 seconds in milliseconds
+        
+        let mut volume_1m = Decimal::ZERO;
+        let mut trade_count_1m = 0;
+        let mut volume_price_sum = Decimal::ZERO;
+        
+        for trade in recent_trades.iter().rev() {
+            if trade.event_time < one_minute_ago {
+                break; // trades are ordered chronologically
+            }
+            volume_1m += trade.quantity;
+            volume_price_sum += trade.quantity * trade.price;
+            trade_count_1m += 1;
+        }
+        
+        let vwap_1m = if volume_1m > Decimal::ZERO {
+            Some(volume_price_sum / volume_1m)
+        } else {
+            None
+        };
 
         
         
