@@ -20,28 +20,6 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-
-    //this is temporary just while developing other stuff
-    let symbol = std::env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("Usage: orderbook-engine <symbol>");
-        std::process::exit(1);
-    });
-    let ws_stream = connect_trade_stream(&symbol).await?;
-    tokio::pin!(ws_stream);
-    while let Some(msg) = ws_stream.next().await {
-        let m = msg.unwrap();
-        println!("{:?}", m);
-
-    }
-
-
-    //run_depth_book_stuff().await?;
-
-    Ok(())
-}
-
-async fn run_depth_book_stuff() -> Result<()> {
-    
     let symbol = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("Usage: orderbook-engine <symbol>");
         std::process::exit(1);
@@ -65,7 +43,8 @@ async fn run_depth_book_stuff() -> Result<()> {
             
             let book_arc = state_clone.current_book.load();
             let is_syncing = *state_clone.is_syncing.read().await;
-            
+
+            println!("{:?}", state_clone.recent_trades.load().len());
             if is_syncing {
                 println!("Status: Syncing...");
             } else {
@@ -79,10 +58,10 @@ async fn run_depth_book_stuff() -> Result<()> {
                     .map(|(p, q)| (scaler_clone.ticks_to_price(*p), scaler_clone.ticks_to_price(*q)))
                     .collect();
 
-                println!("Top 2 levels - Bids: {:?}, Asks: {:?}", bids_decimal, asks_decimal);
+                //println!("Top 2 levels - Bids: {:?}, Asks: {:?}", bids_decimal, asks_decimal);
                 
                 if let (Some((bid_price, _)), Some((ask_price, _))) = (book_arc.best_bid(), book_arc.best_ask()) {
-                    println!("Best Bid: {}, Best Ask: {}, Spread: {}", scaler_clone.ticks_to_price(*bid_price), scaler_clone.ticks_to_price(*ask_price), scaler_clone.ticks_to_price(*ask_price - *bid_price));
+                    //println!("Best Bid: {}, Best Ask: {}, Spread: {}", scaler_clone.ticks_to_price(*bid_price), scaler_clone.ticks_to_price(*ask_price), scaler_clone.ticks_to_price(*ask_price - *bid_price));
                 }
             }
         }
