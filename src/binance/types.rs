@@ -114,7 +114,7 @@ impl DepthUpdate {
 }
 
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Trade {
     #[serde(rename = "E")]
     pub event_time: u64,
