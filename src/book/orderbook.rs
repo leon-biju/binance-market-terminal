@@ -1,8 +1,11 @@
 //dont touch this file
 use std::collections::BTreeMap;
 use num_traits::Zero;
+use anyhow::Result;
+
 use crate::{binance::{types::{DepthSnapshot, DepthUpdate}}};
 use crate::book::scaler;
+
 
 
 #[derive(Debug, Clone)]
@@ -33,10 +36,10 @@ impl OrderBook {
         book
     }
     
-    pub fn apply_update(&mut self, update: &DepthUpdate, scaler: &scaler::Scaler) {
+    pub fn apply_update(&mut self, update: &DepthUpdate, scaler: &scaler::Scaler) -> Result<()> {
         for [price, qty] in &update.b {
-            let pt = scaler.price_to_ticks(&price).unwrap();
-            let qt = scaler.qty_to_ticks(&qty).unwrap();
+            let pt = scaler.price_to_ticks(&price).ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
+            let qt = scaler.qty_to_ticks(&qty).ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &qty))?;
             if qt.is_zero() {
                 self.bids.remove(&pt);
             } else {
@@ -45,14 +48,15 @@ impl OrderBook {
         }
         
         for [price, qty] in &update.a {
-            let pt = scaler.price_to_ticks(&price).unwrap();
-            let qt = scaler.qty_to_ticks(&qty).unwrap();
+            let pt = scaler.price_to_ticks(&price).ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
+            let qt = scaler.qty_to_ticks(&qty).ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &qty))?;
             if qt.is_zero() {
                 self.asks.remove(&pt);
             } else {
                 self.asks.insert(pt, qt);
             }
         }
+        Ok(())
     }
     
     
