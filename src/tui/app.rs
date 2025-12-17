@@ -28,16 +28,19 @@ impl App {
         // Setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
+        stdout.execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
         stdout.execute(EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
 
         // Main loop
         let result = self.run_loop(&mut terminal).await;
 
-        // Restore terminal
+        // Restore terminal (always runs)
         disable_raw_mode()?;
         terminal.backend_mut().execute(LeaveAlternateScreen)?;
+        terminal.backend_mut().execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
         terminal.show_cursor()?;
 
         result
