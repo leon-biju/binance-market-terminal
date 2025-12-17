@@ -33,7 +33,7 @@ impl Scaler {
         let d = Decimal::from_str(price).ok()?;
         let ticks = d / self.tick_size;
         if !ticks.is_integer() {
-            tracing::warn!(
+            tracing::debug!(
                 price = %d,
                 tick_size = %self.tick_size,
                 ticks = %ticks,
@@ -49,7 +49,7 @@ impl Scaler {
         let d = Decimal::from_str(qty).ok()?;
         let ticks = d / self.step_size;
         if !ticks.is_integer() {
-            tracing::warn!(
+            tracing::debug!(
                 qty = %d,
                 step_size = %self.step_size,
                 ticks = %ticks,
