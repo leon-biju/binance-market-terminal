@@ -43,10 +43,15 @@ async fn main() -> Result<()> {
         eprintln!("Usage: orderbook-engine <symbol>");
         std::process::exit(1);
     });
+    // Add visual separator in logs
+    info!("");
+    info!("================================================");
+    info!("");
+    info!("[PROGRAM START]");
 
-    info!("Fetching initial snapshot for {}...", symbol);
+    info!("DEPTH SNAPSHOT FETCH FOR {}...", symbol);
     let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
-    info!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
+    info!("[DEPTH SNAPSHOT_INFO] lastUpdateId: {}", snapshot.last_update_id);
     
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
