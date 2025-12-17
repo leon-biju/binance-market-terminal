@@ -25,7 +25,14 @@ impl App {
     }
 
     pub async fn run(&mut self) -> io::Result<()> {
-        // Setup terminal
+        // sets up panic hook to restore terminal
+        let original_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let _ = Self::restore_terminal();
+            original_hook(panic_info);
+        }));
+
+        // sets up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
@@ -34,16 +41,24 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
 
-        // Main loop
         let result = self.run_loop(&mut terminal).await;
 
-        // Restore terminal (always runs)
-        disable_raw_mode()?;
-        terminal.backend_mut().execute(LeaveAlternateScreen)?;
-        terminal.backend_mut().execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
-        terminal.show_cursor()?;
+        // now program has ended restore the terminal back to normal
+        Self::restore_terminal()?;
+
+        // Restore original panic hook
+        let _ = std::panic::take_hook();
 
         result
+    }
+
+    fn restore_terminal() -> io::Result<()> {
+        let mut stdout = io::stdout();
+        disable_raw_mode()?;
+        stdout.execute(LeaveAlternateScreen)?;
+        stdout.execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+        stdout.execute(crossterm::cursor::Show)?;
+        Ok(())
     }
 
     async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
