@@ -31,9 +31,16 @@ impl Scaler {
 
     pub fn price_to_ticks(&self, price: &str) -> Option<u64> {
         let d = Decimal::from_str(price).ok()?;
-        let ticks = d / self.tick_size; // divide by tick size
+        let ticks = d / self.tick_size;
         if !ticks.is_integer() {
-            return None;
+            tracing::warn!(
+                price = %d,
+                tick_size = %self.tick_size,
+                ticks = %ticks,
+                "Price not aligned to step size, rounding"
+            );
+
+            return ticks.round().to_u64();
         }
         ticks.to_u64()
     }
@@ -42,7 +49,14 @@ impl Scaler {
         let d = Decimal::from_str(qty).ok()?;
         let ticks = d / self.step_size;
         if !ticks.is_integer() {
-            return None;
+            tracing::warn!(
+                qty = %d,
+                step_size = %self.step_size,
+                ticks = %ticks,
+                "Quantity not aligned to step size, rounding"
+            );
+
+            return ticks.round().to_u64();
         }
         ticks.to_u64()
     }
