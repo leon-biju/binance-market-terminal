@@ -38,7 +38,7 @@ impl MarketState {
             current_book: ArcSwap::from_pointee(initial_book),
             is_syncing: tokio::sync::RwLock::new(true), // Start in syncing state
             metrics: ArcSwap::from_pointee(initial_metrics),
-            recent_trades: ArcSwap::from_pointee(VecDeque::new())
+            recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::MAX_TRADES))
         }
     }
 }

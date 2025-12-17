@@ -13,12 +13,14 @@ use crate::book::scaler::Scaler;
 use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::MarketState;
 
+// max trades that can be stored
+pub const MAX_TRADES: usize = 1000;
+
 pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
     RequestSnapshot,
     Shutdown,
 }
-
 pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
     pub sync_state: SyncState,
@@ -50,7 +52,7 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::new(),
+            recent_trades: VecDeque::with_capacity(MAX_TRADES),
             command_tx: command_tx.clone(),
             command_rx,
             last_update_time: std::time::Instant::now(),
@@ -128,7 +130,6 @@ impl MarketDataEngine {
     }
 
     async fn handle_ws_trade(&mut self, trade: Trade) {
-        const MAX_TRADES: usize = 1000;
         
         self.recent_trades.push_back(trade);
         if self.recent_trades.len() > MAX_TRADES {
