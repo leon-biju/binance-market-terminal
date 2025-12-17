@@ -29,9 +29,7 @@ impl MarketState {
             volume_1m: rust_decimal::Decimal::ZERO,
             trade_count_1m: 0,
             vwap_1m: None,
-            last_update_time: std::time::Instant::now(),
             updates_per_second: 0.0,
-            is_syncing: true,
         };
 
         MarketState {

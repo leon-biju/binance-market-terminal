@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
-use tokio::time::error::Elapsed;
 
 use crate::binance::types::{DepthSnapshot, Trade};
 use crate::binance::{snapshot, stream};
@@ -32,7 +31,8 @@ pub struct MarketDataEngine {
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
 
-    last_update_time: std::time::Instant,
+    update_counter : u64,
+    last_rate_calc_time: std::time::Instant,
     updates_per_second: f64,
 
 }
@@ -55,7 +55,8 @@ impl MarketDataEngine {
             recent_trades: VecDeque::with_capacity(MAX_TRADES),
             command_tx: command_tx.clone(),
             command_rx,
-            last_update_time: std::time::Instant::now(),
+            update_counter: 0,
+            last_rate_calc_time: std::time::Instant::now(),
             updates_per_second: 0.0,
         };
         
@@ -79,27 +80,24 @@ impl MarketDataEngine {
     }
 
     fn update_metrics(&mut self) {
+        self.update_counter += 1;
+
         let now = std::time::Instant::now();
-        let elapsed = now.duration_since(self.last_update_time).as_secs_f64();
+        let elapsed = now.duration_since(self.last_rate_calc_time).as_secs_f64();
 
 
-        if elapsed > 0.0 {
-            //use exponential moving average for smoothing (alpha = 0.1)
-            let instant_rate = 1.0 / elapsed;
-            self.updates_per_second = 0.9 * self.updates_per_second + 0.1 * instant_rate;
+        if elapsed >= 1.0 {
+            self.updates_per_second = self.update_counter as f64 / elapsed;
+            
+
+            self.last_rate_calc_time = now;
+            self.update_counter = 0;
         }
-
-        self.last_update_time = now;
-
-        let is_syncing = self.state.is_syncing.try_read()
-            .map(|guard| *guard)
-            .unwrap_or(true);
             
         let metrics = MarketMetrics::compute(
             &self.book,
             &self.recent_trades,
             &self.scaler,
-            is_syncing,
             self.updates_per_second,
         );
         
