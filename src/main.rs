@@ -4,13 +4,36 @@ mod engine;
 mod tui;
 
 use anyhow::Result;
+use tracing::info;
+use tracing_subscriber::{fmt, EnvFilter};
+use tracing_appender::rolling;
+
 use crate::binance::snapshot;
 use crate::book::scaler;
 use crate::engine::engine::MarketDataEngine;
 use crate::tui::App;
 
+fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
+    let file_appender = rolling::daily("logs", "ingestor.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    let filter = EnvFilter::from_default_env()
+        .add_directive("info".parse().unwrap());
+
+
+    fmt().with_env_filter(filter)
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(false)
+        .init();
+    guard
+}
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _log_guard = init_logging();
+
     // Install default crypto provider for rustls before any TLS connections
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -21,9 +44,9 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     });
 
-    println!("Fetching initial snapshot for {}...", symbol);
+    info!("Fetching initial snapshot for {}...", symbol);
     let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
-    println!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
+    info!("Snapshot lastUpdateId: {}", snapshot.last_update_id);
     
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
@@ -33,7 +56,7 @@ async fn main() -> Result<()> {
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
-            eprintln!("Engine error: {}", e);
+            tracing::error!("Engine error: {}", e);
         }
     });
     
@@ -48,7 +71,7 @@ async fn main() -> Result<()> {
 }
 
 
-async fn run_engine() -> Result<()> {
+async fn old_engine_info() -> Result<()> {
 // spawn a task to periodically read and display the orderbook
     // let state_clone = state.clone();
     // tokio::spawn(async move {
