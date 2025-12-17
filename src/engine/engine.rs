@@ -63,7 +63,7 @@ impl MarketDataEngine {
                     let _ = tx.send(EngineCommand::NewSnapshot(snapshot)).await;
                 }
                 Err(e) => {
-                    eprintln!("Fatal error, failed to fetch snapshot: {}", e);
+                    tracing::error!("Fatal error, failed to fetch snapshot: {}", e);
                 }
             }
         });
@@ -87,7 +87,7 @@ impl MarketDataEngine {
     async fn handle_command(&mut self, cmd: EngineCommand) -> Result<bool> {
         match cmd {
             EngineCommand::NewSnapshot(snapshot) => {
-                println!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
+                tracing::info!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
                 self.state.current_book.store(Arc::new(self.book.clone()));
@@ -96,12 +96,12 @@ impl MarketDataEngine {
                 Ok(false)
             }
             EngineCommand::RequestSnapshot => {
-                println!("Gap detected, requesting new snapshot...");
+                tracing::warn!("Gap detected, requesting new snapshot...");
                 self.spawn_snapshot_fetch();
                 Ok(false)
             }
             EngineCommand::Shutdown => {
-                println!("Shutting down engine...");
+                tracing::info!("Shutting down engine...");
                 Ok(true)
             }
         }
@@ -124,7 +124,7 @@ impl MarketDataEngine {
         match self.sync_state.process_delta(update) {
             SyncOutcome::Updates(updates) => {
                 for update in updates {
-                    self.book.apply_update(&update, &self.scaler);
+                    self.book.apply_update(&update, &self.scaler)?;
                 }
                 // the ole switcheroo
                 self.state.current_book.store(Arc::new(self.book.clone()));
@@ -149,7 +149,7 @@ impl MarketDataEngine {
         let trade_stream = stream::connect_trade_stream(&symbol).await?;
         
         
-        println!("Engine running for symbol: {}", self.symbol);
+        tracing::info!("Engine running for symbol: {}", self.symbol);
 
         tokio::pin!(depth_stream);
         tokio::pin!(trade_stream);
@@ -168,7 +168,7 @@ impl MarketDataEngine {
                     match result {
                         Ok(trade) => self.handle_ws_trade(trade).await,
                         Err(e) => {
-                            eprintln!("Trade websocket stream error: {}", e);
+                            tracing::error!("Trade websocket stream error: {}", e);
                             break;
                         }
                     }
@@ -178,7 +178,7 @@ impl MarketDataEngine {
                     match result {
                         Ok(update) => self.handle_ws_update(update).await?,
                         Err(e) => {
-                            eprintln!("Depth websocket stream error: {}", e);
+                            tracing::error!("Depth websocket stream error: {}", e);
                             break;
                         }
                     }
