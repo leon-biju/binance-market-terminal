@@ -13,11 +13,12 @@ pub struct MarketState {
     pub is_syncing: tokio::sync::RwLock<bool>,
     pub metrics: ArcSwap<MarketMetrics>,
     pub recent_trades: ArcSwap<VecDeque<Trade>>,
+    pub symbol: String,
 
 }
 
 impl MarketState {
-    pub fn new(initial_book: OrderBook) -> Self {
+    pub fn new(initial_book: OrderBook, symbol: String) -> Self {
         let initial_metrics = MarketMetrics {
             best_bid: None,
             best_ask: None,
@@ -36,7 +37,8 @@ impl MarketState {
             current_book: ArcSwap::from_pointee(initial_book),
             is_syncing: tokio::sync::RwLock::new(true), // Start in syncing state
             metrics: ArcSwap::from_pointee(initial_metrics),
-            recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::MAX_TRADES))
+            recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::MAX_TRADES)),
+            symbol,
         }
     }
 }

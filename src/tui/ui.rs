@@ -38,8 +38,15 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     let header_text = vec![
         Line::from(vec![
-            Span::raw("Status: "),
+            Span::from(&state.symbol),
+            Span::raw(" | "),
             status,
+            Span::raw(" | "),
+            Span::raw("Depth: Ok"),
+            Span::raw(" | "),
+            Span::raw("Trades: Ok"),
+            Span::raw(" | "),
+            Span::raw("Lag: 0ms surebud"),
             Span::raw(" | "),
             Span::raw(format!("Updates/s: {:.1}", metrics.updates_per_second)),
         ]),

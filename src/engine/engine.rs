@@ -44,7 +44,7 @@ impl MarketDataEngine {
         let mut sync_state = SyncState::new();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
-        let state = Arc::new(MarketState::new(book.clone()));
+        let state = Arc::new(MarketState::new(book.clone(), symbol.clone()));
         
         let engine = MarketDataEngine {
             state: state.clone(),
