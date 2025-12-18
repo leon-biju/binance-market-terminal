@@ -8,7 +8,7 @@ use ratatui::{
 };
 use crate::engine::state::MarketState;
 
-pub fn render(frame: &mut Frame, state: &Arc<MarketState>) {
+pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,20 +19,23 @@ pub fn render(frame: &mut Frame, state: &Arc<MarketState>) {
         ])
         .split(frame.area());
 
-    render_header(frame, chunks[0], state);
+    render_header(frame, chunks[0], state, frozen);
     render_main(frame, chunks[1], state);
     render_metrics(frame, chunks[2], state);
     render_footer(frame, chunks[3]);
+    
 }
 
-fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool) {
     let metrics = state.metrics.load();
     
     let is_syncing = state.is_syncing.try_read()
         .map(|guard| *guard)
         .unwrap_or(true);
     
-    let status = if is_syncing {
+    let status = if frozen {
+        Span::styled("FROZEN", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
+    } else if is_syncing {
         Span::styled("SYNCING", Style::default().fg(Color::Yellow))
     } else {
         Span::styled("LIVE", Style::default().fg(Color::Green))
@@ -230,7 +233,7 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {
-    let footer = Paragraph::new("Press 'q' or 'Esc' to quit");
+    let footer = Paragraph::new("Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze");
     frame.render_widget(footer, area);
 }
 

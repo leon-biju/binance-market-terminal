@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use std::io;
 use ratatui::{
     backend::CrosstermBackend,
@@ -14,6 +14,7 @@ use crate::engine::state::MarketState;
 pub struct App {
     state: Arc<MarketState>,
     should_quit: bool,
+    frozen: bool,
 }
 
 impl App {
@@ -21,6 +22,7 @@ impl App {
         Self {
             state,
             should_quit: false,
+            frozen: false,
         }
     }
 
@@ -63,7 +65,9 @@ impl App {
 
     async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
-            terminal.draw(|f| super::ui::render(f, &self.state))?;
+            if !self.frozen {
+                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen))?;
+            }
 
             // Poll for events with timeout
             if event::poll(std::time::Duration::from_millis(100))? {
@@ -72,6 +76,10 @@ impl App {
                         match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => {
                                 self.should_quit = true;
+                            }
+                            KeyCode::Char('f') => {
+                                self.frozen = !self.frozen;
+                                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen))?;
                             }
                             _ => {}
                         }
