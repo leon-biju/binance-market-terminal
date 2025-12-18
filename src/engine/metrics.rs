@@ -21,11 +21,22 @@ pub struct MarketMetrics {
 
     // System metrics
     pub updates_per_second: f64,
+
+    // latency tracking
+    pub orderbook_lag_ms: Option<u64>,
+    pub trade_lag_ms: Option<u64>
 }
 
 
 impl MarketMetrics {
-    pub fn compute(book: &OrderBook, recent_trades: &VecDeque<Trade>, scaler: &Scaler, updates_per_second: f64) -> Self {
+    pub fn compute(
+        book: &OrderBook,
+        recent_trades: &VecDeque<Trade>,
+        scaler: &Scaler,
+        updates_per_second: f64,
+        last_update_event_time: Option<u64>,
+    ) -> Self {
+
         let best_bid: Option<Decimal> = book.best_bid()
             .map(|(price, _)| scaler.ticks_to_price(*price));
         let best_ask: Option<Decimal> = book.best_ask()
@@ -46,12 +57,12 @@ impl MarketMetrics {
         let last_qty = last_trade.map(|t| t.quantity);
         
         // Calculate metrics for last 1 minute
-        let now = std::time::SystemTime::now()
+        let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         
-        let one_minute_ago = now - 60_000; // 60 seconds in milliseconds
+        let one_minute_ago = now_ms - 60_000; // 60 seconds in milliseconds
         
         let mut volume_1m = Decimal::ZERO;
         let mut trade_count_1m = 0;
@@ -73,6 +84,12 @@ impl MarketMetrics {
         };
 
         
+        // calculate lag
+        let orderbook_lag_ms = last_update_event_time
+            .map(|evt_time| now_ms.saturating_sub(evt_time));
+        
+        let trade_lag_ms = recent_trades.back()
+            .map(|trade| now_ms.saturating_sub(trade.event_time));
         
         Self { 
             best_bid,
@@ -86,6 +103,8 @@ impl MarketMetrics {
             trade_count_1m,
             vwap_1m,
             updates_per_second,
+            orderbook_lag_ms,
+            trade_lag_ms,
         }
 
     }

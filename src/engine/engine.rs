@@ -35,6 +35,8 @@ pub struct MarketDataEngine {
     last_rate_calc_time: std::time::Instant,
     updates_per_second: f64,
 
+    last_update_event_time: Option<u64>,
+
 }
 
 impl MarketDataEngine {
@@ -58,6 +60,7 @@ impl MarketDataEngine {
             update_counter: 0,
             last_rate_calc_time: std::time::Instant::now(),
             updates_per_second: 0.0,
+            last_update_event_time: None,
         };
         
         (engine, command_tx, state) 
@@ -99,6 +102,7 @@ impl MarketDataEngine {
             &self.recent_trades,
             &self.scaler,
             self.updates_per_second,
+            self.last_update_event_time,
         );
         
         self.state.metrics.store(Arc::new(metrics));
@@ -140,6 +144,8 @@ impl MarketDataEngine {
     }
 
     async fn handle_ws_update(&mut self, update: crate::binance::types::DepthUpdate) -> Result<()> {
+        self.last_update_event_time = Some(update.event_time);
+
         match self.sync_state.process_delta(update) {
             SyncOutcome::Updates(updates) => {
                 for update in updates {
