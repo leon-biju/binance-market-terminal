@@ -1,3 +1,5 @@
+use std::fmt::write;
+
 use rand::Rng;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -114,6 +116,19 @@ impl DepthUpdate {
 }
 
 
+pub enum Side {
+    Sell, 
+    Buy,
+}
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         match self {
+            Side::Buy => write!(f, "BUY"),
+            Side::Sell => write!(f, "SELL"),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Trade {
     #[serde(rename = "E")]
@@ -129,4 +144,14 @@ pub struct Trade {
     pub trade_time: u64,
     #[serde(rename = "m")]
     pub is_buyer_maker: bool,
+}
+
+impl Trade {
+    pub fn side(&self) -> Side{
+        if self.is_buyer_maker {
+            Side::Sell
+        } else {
+            Side::Buy
+        }
+    }
 }

@@ -137,44 +137,58 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
 
 fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     let metrics = state.metrics.load();
+    let recent_trades = state.recent_trades.load();
+    
+    // Calculate available lines: area height - 2 for borders - 1 for header - 1 for last trade section
+    let available_lines = (area.height.saturating_sub(5)) as usize;
     
     let mut lines = vec![];
     
-    // Last trade
+    // Last trade section
     lines.push(Line::from(vec![
         Span::styled("Last Trade:", Style::default().add_modifier(Modifier::BOLD)),
     ]));
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(format!("{}", format_opt_decimal(metrics.last_price)), Style::default().fg(Color::Cyan)),
-        Span::raw("  "),
-        Span::raw(format!("{}", format_opt_decimal(metrics.last_qty))),
-        Span::raw("  "),
-        Span::styled("BUY", Style::default().fg(Color::Green)),
-    ]));
-    lines.push(Line::from(""));
     
-    // Recent trades header
-    lines.push(Line::from(vec![
-        Span::styled("Recent Trades:", Style::default().add_modifier(Modifier::BOLD)),
-    ]));
-    
-    // Sample recent trades
-    let sample_trades = vec![
-        ("2821.40", "0.0042", "BUY", Color::Green),
-        ("2821.39", "0.0010", "SELL", Color::Red),
-        ("2821.40", "0.0025", "BUY", Color::Green),
-        ("2821.39", "0.0008", "SELL", Color::Red),
-    ];
-    
-    for (price, qty, side, color) in sample_trades {
+    if let (Some(price), Some(qty)) = (metrics.last_price, metrics.last_qty) {
+        let side = recent_trades.back().map(|t| t.side()).unwrap_or(crate::binance::types::Side::Buy);
+        let (side_text, side_color) = match side {
+            crate::binance::types::Side::Buy => ("BUY", Color::Green),
+            crate::binance::types::Side::Sell => ("SELL", Color::Red),
+        };
+        
         lines.push(Line::from(vec![
             Span::raw(" "),
-            Span::styled(price, Style::default().fg(Color::Cyan)),
+            Span::styled(format!("{}", price), Style::default().fg(Color::Cyan)),
             Span::raw("  "),
-            Span::raw(qty),
+            Span::raw(format!("{}", qty)),
             Span::raw("  "),
-            Span::styled(side, Style::default().fg(color)),
+            Span::styled(side_text, Style::default().fg(side_color)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::raw("  No trades yet"),
+        ]));
+    }
+    
+    lines.push(Line::from(""));
+    
+    // Get the most recent trades that fit in available space
+    let trades_to_display = recent_trades.len().min(available_lines);
+    
+    // Display trades from newest to oldest so most recent appears at top
+    for trade in recent_trades.iter().rev().take(trades_to_display) {
+        let (side_text, side_color) = match trade.side() {
+            crate::binance::types::Side::Buy => ("BUY", Color::Green),
+            crate::binance::types::Side::Sell => ("SELL", Color::Red),
+        };
+        
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(format!("{:>9}", trade.price), Style::default().fg(Color::Cyan)),
+            Span::raw("  "),
+            Span::raw(format!("{:>8}", trade.quantity)),
+            Span::raw("  "),
+            Span::styled(side_text, Style::default().fg(side_color)),
         ]));
     }
     
