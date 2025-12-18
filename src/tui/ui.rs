@@ -36,17 +36,34 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         Span::styled("LIVE", Style::default().fg(Color::Green))
     };
     
+    // Format depth status
+    let depth_text = Span::raw("Ok");
+    
+    // Format lag with color coding
+    let format_lag = |lag_ms: Option<u64>| -> Span {
+        match lag_ms {
+            None => Span::raw("N/A"),
+            Some(ms) if ms < 100 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Green)),
+            Some(ms) if ms < 500 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Yellow)),
+            Some(ms) => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Red)),
+        }
+    };
+    
     let header_text = vec![
         Line::from(vec![
             Span::from(&state.symbol),
             Span::raw(" | "),
             status,
             Span::raw(" | "),
-            Span::raw("Depth: Ok"),
+            Span::raw("Depth: "),
+            depth_text,
+            //Span::raw(format!(" ({}/{})", metrics.bid_depth, metrics.ask_depth)),
             Span::raw(" | "),
-            Span::raw("Trades: Ok"),
+            Span::raw("Orderbook Lag: "),
+            format_lag(metrics.orderbook_lag_ms),
             Span::raw(" | "),
-            Span::raw("Lag: 0ms surebud"),
+            Span::raw("Trade Lag: "),
+            format_lag(metrics.trade_lag_ms),
             Span::raw(" | "),
             Span::raw(format!("Updates/s: {:.1}", metrics.updates_per_second)),
         ]),

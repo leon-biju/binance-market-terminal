@@ -31,6 +31,8 @@ impl MarketState {
             trade_count_1m: 0,
             vwap_1m: None,
             updates_per_second: 0.0,
+            orderbook_lag_ms: None,
+            trade_lag_ms: None,
         };
 
         MarketState {
