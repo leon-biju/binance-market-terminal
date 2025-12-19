@@ -104,12 +104,15 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         Span::styled("  ASK", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
     ]));
     
-    // Sample asks (top 5)
-    for i in 0..5 {
+    // Get top 5 level bids and asks as decimals
+    let (bids, asks) = state.top_n_depth(5);
+
+    // Display asks (top 5, reversed so highest ask is at top)
+    for (price, qty) in asks.iter().rev() {
         lines.push(Line::from(vec![
-            Span::styled(format!(" {:.2}", 2821.45 - i as f64 * 0.01), Style::default().fg(Color::Red)),
+            Span::styled(format!(" {:<12}", price), Style::default().fg(Color::Red)),
             Span::raw(" | "),
-            Span::raw(format!("{:>6.2}", 0.82 + i as f64 * 0.15)),
+            Span::raw(format!("{:>10}", qty)),
         ]));
     }
     
@@ -118,12 +121,12 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         Span::raw("─".repeat(area.width as usize - 2)),
     ]));
     
-    // Sample bids (top 5)
-    for i in 0..5 {
+    // Display bids (top 5)
+    for (price, qty) in bids.iter() {
         lines.push(Line::from(vec![
-            Span::styled(format!(" {:.2}", 2821.41 - i as f64 * 0.01), Style::default().fg(Color::Green)),
+            Span::styled(format!(" {:<12}", price), Style::default().fg(Color::Green)),
             Span::raw(" | "),
-            Span::raw(format!("{:>6.2}", 1.88 - i as f64 * 0.25)),
+            Span::raw(format!("{:>10}", qty)),
         ]));
     }
     
@@ -143,7 +146,7 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     let recent_trades = state.recent_trades.load();
     
     // Calculate available lines: area height - 2 for borders - 1 for header - 1 for last trade section
-    let available_lines = (area.height.saturating_sub(5)) as usize;
+    let available_lines = (area.height.saturating_sub(5)).min(15) as usize;
     
     let mut lines = vec![];
     

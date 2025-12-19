@@ -1,7 +1,8 @@
 use std::{collections::VecDeque};
 
 use arc_swap::ArcSwap;
-use crate::{binance::types::Trade, book::orderbook::OrderBook, engine::metrics::MarketMetrics};
+use rust_decimal::Decimal;
+use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}, engine::metrics::MarketMetrics};
 
 // This struct is all the tui will see
 // Anything the tui needs goes here
@@ -14,11 +15,11 @@ pub struct MarketState {
     pub metrics: ArcSwap<MarketMetrics>,
     pub recent_trades: ArcSwap<VecDeque<Trade>>,
     pub symbol: String,
-
+    pub scaler: Scaler,
 }
 
 impl MarketState {
-    pub fn new(initial_book: OrderBook, symbol: String) -> Self {
+    pub fn new(initial_book: OrderBook, symbol: String, scaler: Scaler) -> Self {
         let initial_metrics = MarketMetrics {
             best_bid: None,
             best_ask: None,
@@ -41,6 +42,21 @@ impl MarketState {
             metrics: ArcSwap::from_pointee(initial_metrics),
             recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::MAX_TRADES)),
             symbol,
+            scaler,
         }
+    }
+
+    pub fn top_n_depth(&self, n: usize) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
+        let (bids, asks) = self.current_book.load().top_n_depth(n);
+
+        let bids_decimal = bids.iter()
+            .map(|(price, qty)| (self.scaler.ticks_to_price(*price), self.scaler.ticks_to_qty(*qty)))
+            .collect();
+
+        let asks_decimal = asks.iter()
+            .map(|(price, qty)| (self.scaler.ticks_to_price(*price), self.scaler.ticks_to_qty(*qty)))
+            .collect();
+
+        (bids_decimal, asks_decimal)
     }
 }
