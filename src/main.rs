@@ -72,6 +72,7 @@ async fn main() -> Result<()> {
     // TUI exited, engine will continue running until dropped
     drop(engine_handle);
     
+    info!("[PROGRAM END]");
     Ok(())
 }
 
