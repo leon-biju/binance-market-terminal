@@ -8,7 +8,7 @@ use ratatui::{
 };
 use crate::engine::state::MarketState;
 
-pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool, refresh_ms: u64) {
+pub fn render(frame: &mut Frame, app_data: &super::App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,10 +19,10 @@ pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool, refresh
         ])
         .split(frame.area());
 
-    render_header(frame, chunks[0], state, frozen);
-    render_main(frame, chunks[1], state);
-    render_metrics(frame, chunks[2], state);
-    render_footer(frame, chunks[3], refresh_ms);
+    render_header(frame, chunks[0], &app_data.state, app_data.frozen);
+    render_main(frame, chunks[1], &app_data.state);
+    render_metrics(frame, chunks[2], &app_data.state);
+    render_footer(frame, chunks[3], app_data.refresh_ms);
     
 }
 

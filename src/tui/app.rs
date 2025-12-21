@@ -12,13 +12,14 @@ use crossterm::{
 use crate::engine::state::MarketState;
 
 pub struct App {
-    state: Arc<MarketState>,
-    should_quit: bool,
-    frozen: bool,
-    refresh_ms: u64,
+    pub state: Arc<MarketState>,
+    pub should_quit: bool,
+    pub frozen: bool,
+    pub refresh_ms: u64,
 }
 
 impl App {
+    
     pub fn new(state: Arc<MarketState>) -> Self {
         Self {
             state,
@@ -68,7 +69,7 @@ impl App {
     async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
             if !self.frozen {
-                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen, self.refresh_ms))?;
+                terminal.draw(|f| super::ui::render(f, &self))?;
             }
 
             // Poll for events with timeout
@@ -81,7 +82,7 @@ impl App {
                             }
                             KeyCode::Char('f') | KeyCode::Char('F') => {
                                 self.frozen = !self.frozen;
-                                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen, self.refresh_ms))?;
+                                terminal.draw(|f| super::ui::render(f, &self))?;
                             }
                             KeyCode::Up => {
                                 self.refresh_ms = (self.refresh_ms + 100).min(2000);
