@@ -41,6 +41,8 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
         Span::styled("LIVE", Style::default().fg(Color::Green))
     };
     
+    let format_symbol = Span::styled(&state.symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+
     // Format depth status
     let depth_text = Span::raw("Ok");
     
@@ -56,7 +58,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
     
     let header_text = vec![
         Line::from(vec![
-            Span::from(&state.symbol),
+            format_symbol,
             Span::raw(" | "),
             status,
             Span::raw(" | "),

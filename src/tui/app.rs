@@ -76,10 +76,10 @@ impl App {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => {
+                            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
                                 self.should_quit = true;
                             }
-                            KeyCode::Char('f') => {
+                            KeyCode::Char('f') | KeyCode::Char('F') => {
                                 self.frozen = !self.frozen;
                                 terminal.draw(|f| super::ui::render(f, &self.state, self.frozen, self.refresh_ms))?;
                             }
