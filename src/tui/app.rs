@@ -1,4 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
+use std::{sync::Arc};
 use std::io;
 use ratatui::{
     backend::CrosstermBackend,
@@ -16,6 +17,7 @@ pub struct App {
     pub should_quit: bool,
     pub frozen: bool,
     pub refresh_ms: u64,
+    pub start_time: std::time::Instant,
 }
 
 impl App {
@@ -26,6 +28,7 @@ impl App {
             should_quit: false,
             frozen: false,
             refresh_ms: 500,
+            start_time: std::time::Instant::now(),
         }
     }
 

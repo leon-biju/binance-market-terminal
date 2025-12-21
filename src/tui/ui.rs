@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::{Debug, format}, sync::Arc};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
-use crate::engine::state::MarketState;
+use crate::{engine::state::MarketState, tui::app};
 
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let chunks = Layout::default()
@@ -19,14 +19,30 @@ pub fn render(frame: &mut Frame, app_data: &super::App) {
         ])
         .split(frame.area());
 
-    render_header(frame, chunks[0], &app_data.state, app_data.frozen);
+    render_header(frame, chunks[0], &app_data.state, app_data.frozen, app_data.start_time.elapsed());
     render_main(frame, chunks[1], &app_data.state);
     render_metrics(frame, chunks[2], &app_data.state);
     render_footer(frame, chunks[3], app_data.refresh_ms);
     
 }
 
-fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool) {
+fn duration_to_string(dur: std::time::Duration) -> String {
+    let total_secs = dur.as_secs();
+
+
+    let seconds = total_secs % 60;
+    let minutes = (total_secs / 60) % 60;
+    let hours   = total_secs / 3600;
+
+    if hours > 0 {
+        format!("{}:{:02}:{:02}", hours, minutes, seconds)
+    } else {
+        format!("{:02}:{:02}", minutes, seconds)
+    }
+
+}
+
+fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool, uptime: std::time::Duration) {
     let metrics = state.metrics.load();
     
     let is_syncing = state.is_syncing.try_read()
@@ -56,7 +72,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
         }
     };
     
-    let header_text = vec![
+    let left_header_text = vec![
         Line::from(vec![
             format_symbol,
             Span::raw(" | "),
@@ -76,10 +92,34 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
         ]),
     ];
     
-    let header = Paragraph::new(header_text)
-        .block(Block::default().borders(Borders::ALL).title("Market Data Engine"));
+    let right_header_text = vec![
+        Line::from(vec![
+            Span::styled("Uptime: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(duration_to_string(uptime)),
+        ]),
+    ];
     
-    frame.render_widget(header, area);
+    let header_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(80),
+            Constraint::Percentage(20),
+        ])
+        .split(area);
+
+    let left_header = Paragraph::new(left_header_text)
+        .block(Block::default()
+        .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
+        .title("Market Data Engine"));
+
+     let right_header = Paragraph::new(right_header_text)
+        .alignment(ratatui::layout::Alignment::Right)
+        .block(Block::default()
+        .borders(Borders::RIGHT | Borders::TOP | Borders::BOTTOM));
+
+    
+    frame.render_widget(left_header, header_chunks[0]);
+    frame.render_widget(right_header, header_chunks[1]);
 }
 
 fn render_main(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
