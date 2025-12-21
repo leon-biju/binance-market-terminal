@@ -36,6 +36,7 @@ pub struct MarketDataEngine {
     updates_per_second: f64,
 
     last_update_event_time: Option<u64>,
+    last_trade_event_time: Option<u64>,
 
 }
 
@@ -61,6 +62,7 @@ impl MarketDataEngine {
             last_rate_calc_time: std::time::Instant::now(),
             updates_per_second: 0.0,
             last_update_event_time: None,
+            last_trade_event_time: None,
         };
         
         (engine, command_tx, state) 
@@ -103,6 +105,7 @@ impl MarketDataEngine {
             &self.scaler,
             self.updates_per_second,
             self.last_update_event_time,
+            self.last_trade_event_time,
         );
         
         self.state.metrics.store(Arc::new(metrics));
@@ -132,12 +135,13 @@ impl MarketDataEngine {
     }
 
     async fn handle_ws_trade(&mut self, trade: Trade) {
-        
+        self.last_trade_event_time = Some(trade.event_time);
+
         self.recent_trades.push_back(trade);
         if self.recent_trades.len() > MAX_TRADES {
             self.recent_trades.pop_front();
         }
-
+        
         //the ole switcheroo
         self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
         self.update_metrics();

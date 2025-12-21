@@ -33,6 +33,7 @@ impl MarketMetrics {
         scaler: &Scaler,
         updates_per_second: f64,
         last_update_event_time: Option<u64>,
+        last_trade_event_time: Option<u64>,
     ) -> Self {
 
         let spread = book.spread()
@@ -81,8 +82,8 @@ impl MarketMetrics {
         let orderbook_lag_ms = last_update_event_time
             .map(|evt_time| now_ms.saturating_sub(evt_time));
         
-        let trade_lag_ms = recent_trades.back()
-            .map(|trade| now_ms.saturating_sub(trade.event_time));
+        let trade_lag_ms = last_trade_event_time
+            .map(|evt_time| now_ms.saturating_sub(evt_time));
         
         Self { 
             spread,
