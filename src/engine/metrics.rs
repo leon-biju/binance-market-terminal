@@ -6,8 +6,6 @@ use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}}
 
 pub struct MarketMetrics {
     // Orderbook metrics
-    pub best_bid: Option<Decimal>,
-    pub best_ask: Option<Decimal>,
     pub spread: Option<Decimal>,
     pub mid_price: Option<Decimal>,
     pub imbalance_ratio: Option<Decimal>,
@@ -36,11 +34,6 @@ impl MarketMetrics {
         updates_per_second: f64,
         last_update_event_time: Option<u64>,
     ) -> Self {
-
-        let best_bid: Option<Decimal> = book.best_bid()
-            .map(|(price, _)| scaler.ticks_to_price(*price));
-        let best_ask: Option<Decimal> = book.best_ask()
-            .map(|(price, _)| scaler.ticks_to_price(*price));
 
         let spread = book.spread()
             .map(|spread_ticks| scaler.ticks_to_price(spread_ticks));
@@ -92,8 +85,6 @@ impl MarketMetrics {
             .map(|trade| now_ms.saturating_sub(trade.event_time));
         
         Self { 
-            best_bid,
-            best_ask,
             spread,
             mid_price,
             imbalance_ratio,
@@ -106,6 +97,6 @@ impl MarketMetrics {
             orderbook_lag_ms,
             trade_lag_ms,
         }
-
+        
     }
 }
