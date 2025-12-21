@@ -21,8 +21,6 @@ pub struct MarketState {
 impl MarketState {
     pub fn new(initial_book: OrderBook, symbol: String, scaler: Scaler) -> Self {
         let initial_metrics = MarketMetrics {
-            best_bid: None,
-            best_ask: None,
             spread: None,
             mid_price: None,
             imbalance_ratio: None,
