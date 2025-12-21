@@ -8,7 +8,7 @@ use ratatui::{
 };
 use crate::engine::state::MarketState;
 
-pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool) {
+pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool, refresh_ms: u64) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, state: &Arc<MarketState>, frozen: bool) {
     render_header(frame, chunks[0], state, frozen);
     render_main(frame, chunks[1], state);
     render_metrics(frame, chunks[2], state);
-    render_footer(frame, chunks[3]);
+    render_footer(frame, chunks[3], refresh_ms);
     
 }
 
@@ -235,8 +235,13 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_footer(frame: &mut Frame, area: Rect) {
-    let footer = Paragraph::new("Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze");
+fn render_footer(frame: &mut Frame, area: Rect, refresh_ms: u64) {
+
+    let footer = Paragraph::new(format!(
+        "Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze | Press '↑/↓' to adjust display speed | Display speed: ({}ms)"
+        , refresh_ms
+    ));
+
     frame.render_widget(footer, area);
 }
 

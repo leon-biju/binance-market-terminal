@@ -15,6 +15,7 @@ pub struct App {
     state: Arc<MarketState>,
     should_quit: bool,
     frozen: bool,
+    refresh_ms: u64,
 }
 
 impl App {
@@ -23,6 +24,7 @@ impl App {
             state,
             should_quit: false,
             frozen: false,
+            refresh_ms: 500,
         }
     }
 
@@ -66,11 +68,11 @@ impl App {
     async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
             if !self.frozen {
-                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen))?;
+                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen, self.refresh_ms))?;
             }
 
             // Poll for events with timeout
-            if event::poll(std::time::Duration::from_millis(100))? {
+            if event::poll(std::time::Duration::from_millis(self.refresh_ms))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
@@ -79,7 +81,13 @@ impl App {
                             }
                             KeyCode::Char('f') => {
                                 self.frozen = !self.frozen;
-                                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen))?;
+                                terminal.draw(|f| super::ui::render(f, &self.state, self.frozen, self.refresh_ms))?;
+                            }
+                            KeyCode::Up => {
+                                self.refresh_ms = (self.refresh_ms + 100).min(2000);
+                            }
+                            KeyCode::Down => {
+                                self.refresh_ms = (self.refresh_ms - 100).max(100);
                             }
                             _ => {}
                         }
