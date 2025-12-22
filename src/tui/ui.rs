@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, app_data: &super::App) {
     render_header(frame, chunks[0], &app_data.state, app_data.frozen, app_data.start_time.elapsed());
     render_main(frame, chunks[1], &app_data.state);
     render_metrics(frame, chunks[2], &app_data.state);
-    render_footer(frame, chunks[3], app_data.refresh_ms);
+    render_footer(frame, chunks[3], app_data.update_interval_ms);
     
 }
 
@@ -282,14 +282,21 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_footer(frame: &mut Frame, area: Rect, refresh_ms: u64) {
+fn render_footer(frame: &mut Frame, area: Rect, update_interval_ms: u64) {
+    let footer_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(80),
+            Constraint::Percentage(20),
+        ])
+        .split(area);
+    let left_footer = Paragraph::new("Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze | Press '↑/↓' to adjust display speed ");
 
-    let footer = Paragraph::new(format!(
-        "Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze | Press '↑/↓' to adjust display speed | Display speed: ({}ms)"
-        , refresh_ms
-    ));
+    let right_footer = Paragraph::new(format!("Display update interval: ({}ms)", update_interval_ms))
+        .alignment(ratatui::layout::Alignment::Right);
 
-    frame.render_widget(footer, area);
+    frame.render_widget(left_footer, footer_chunks[0]);
+    frame.render_widget(right_footer, footer_chunks[1]);
 }
 
 fn format_opt_int<T: std::fmt::Display>(opt: Option<T>) -> String {

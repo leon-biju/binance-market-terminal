@@ -16,7 +16,7 @@ pub struct App {
     pub state: Arc<MarketState>,
     pub should_quit: bool,
     pub frozen: bool,
-    pub refresh_ms: u64,
+    pub update_interval_ms: u64,
     pub start_time: std::time::Instant,
 }
 
@@ -27,7 +27,7 @@ impl App {
             state,
             should_quit: false,
             frozen: false,
-            refresh_ms: 500,
+            update_interval_ms: 500,
             start_time: std::time::Instant::now(),
         }
     }
@@ -76,7 +76,7 @@ impl App {
             }
 
             // Poll for events with timeout
-            if event::poll(std::time::Duration::from_millis(self.refresh_ms))? {
+            if event::poll(std::time::Duration::from_millis(self.update_interval_ms))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
@@ -88,10 +88,10 @@ impl App {
                                 terminal.draw(|f| super::ui::render(f, &self))?;
                             }
                             KeyCode::Up => {
-                                self.refresh_ms = (self.refresh_ms + 100).min(2000);
+                                self.update_interval_ms = (self.update_interval_ms + 100).min(2000);
                             }
                             KeyCode::Down => {
-                                self.refresh_ms = (self.refresh_ms - 100).max(100);
+                                self.update_interval_ms = (self.update_interval_ms - 100).max(100);
                             }
                             _ => {}
                         }
