@@ -15,6 +15,7 @@ pub struct MarketMetrics {
     pub last_qty: Option<Decimal>,
     pub volume_1m: Decimal,
     pub trade_count_1m: u64,
+    pub buy_ratio_1m: Option<f64>,
     pub vwap_1m: Option<Decimal>,
 
     // System metrics
@@ -61,6 +62,8 @@ impl MarketMetrics {
         let mut volume_1m = Decimal::ZERO;
         let mut trade_count_1m = 0;
         let mut volume_price_sum = Decimal::ZERO;
+
+        let mut buy_count_1m: u32 = 0;
         
         for trade in recent_trades.iter().rev() {
             if trade.event_time < one_minute_ago {
@@ -69,7 +72,16 @@ impl MarketMetrics {
             volume_1m += trade.quantity;
             volume_price_sum += trade.quantity * trade.price;
             trade_count_1m += 1;
+            if !trade.is_buyer_maker {
+                buy_count_1m += 1
+            }
         }
+        
+        let buy_ratio_1m = if trade_count_1m > 0 {
+            Some(buy_count_1m as f64 / trade_count_1m as f64)
+        } else { 
+            None
+        };
         
         let vwap_1m = if volume_1m > Decimal::ZERO {
             Some(volume_price_sum / volume_1m)
@@ -93,6 +105,7 @@ impl MarketMetrics {
             last_qty,
             volume_1m,
             trade_count_1m,
+            buy_ratio_1m,
             vwap_1m,
             updates_per_second,
             orderbook_lag_ms,

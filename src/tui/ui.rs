@@ -251,23 +251,28 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     let line1 = Line::from(vec![
         Span::raw("Mid: "),
-        Span::styled(format_opt_decimal(metrics.mid_price), Style::default().fg(Color::Cyan)),
+        Span::styled(format_opt_decimal(metrics.mid_price, 3), Style::default().fg(Color::Cyan)),
         Span::raw(" | Spread: "),
-        Span::raw(format_opt_decimal(metrics.spread)),
+        Span::raw(format_opt_decimal(metrics.spread, 3)),
         Span::raw(" | VWAP: "),
-        Span::raw(format_opt_decimal(metrics.vwap_1m)),
+        Span::raw(format_opt_decimal(metrics.vwap_1m, 3)),
         Span::raw(" | Imbalance: "),
-        Span::raw(format_opt_decimal(metrics.imbalance_ratio)),
+        Span::raw(format_opt_decimal(metrics.imbalance_ratio, 3)),
         Span::raw(" | Vol: "),
         Span::raw(metrics.volume_1m.to_string()),
     ]);
     
+    let buy_percent = metrics.buy_ratio_1m
+        .map(|a| (a * 100.0).round() as u32);
+    let sell_percent = buy_percent
+        .map(|a| 100 - a);
+
     let line2 = Line::from(vec![
         Span::raw("Trades/s: "),
         Span::raw(format!("{:.1}", metrics.updates_per_second)),
-        Span::raw(" | Buy %: 58% | Sell %: 42%"),
+        Span::raw(format!(" | Buy %: {}% | Sell %: {}%", format_opt_int(buy_percent), format_opt_int(sell_percent))),
         Span::raw(" | Last depth update: "),
-        Span::raw(format_opt_u64(metrics.orderbook_lag_ms).unwrap_or("N/A".to_string())),
+        Span::raw(format_opt_int(metrics.orderbook_lag_ms)),
         Span::raw("ms ago"),
     ]);
     
@@ -287,10 +292,13 @@ fn render_footer(frame: &mut Frame, area: Rect, refresh_ms: u64) {
     frame.render_widget(footer, area);
 }
 
-fn format_opt_decimal(opt: Option<rust_decimal::Decimal>) -> String {
-    opt.map(|d| d.to_string()).unwrap_or_else(|| "N/A".to_string())
+fn format_opt_int<T: std::fmt::Display>(opt: Option<T>) -> String {
+    opt.map(|v| v.to_string()).unwrap_or_else(|| "N/A".to_string())
 }
 
-fn format_opt_u64(opt: Option<u64>) -> Option<String> {
-    opt.map(|v| v.to_string())
+fn format_opt_decimal(opt: Option<rust_decimal::Decimal>, precision: u32) -> String {
+    opt.map(|d| {
+        let rounded = d.round_dp(precision);
+        rounded.normalize().to_string()
+    }).unwrap_or_else(|| "N/A".to_string())
 }

@@ -28,6 +28,7 @@ impl MarketState {
             last_qty: None,
             volume_1m: rust_decimal::Decimal::ZERO,
             trade_count_1m: 0,
+            buy_ratio_1m: None,
             vwap_1m: None,
             updates_per_second: 0.0,
             orderbook_lag_ms: None,
