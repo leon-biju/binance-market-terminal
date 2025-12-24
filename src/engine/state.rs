@@ -12,7 +12,7 @@ pub struct MarketState {
     // TUI can read this instantly and lock-free.
     pub current_book: ArcSwap<OrderBook>, 
     pub is_syncing: tokio::sync::RwLock<bool>,
-    pub metrics: ArcSwap<MarketMetrics>,
+    pub metrics: tokio::sync::RwLock<MarketMetrics>,
     pub recent_trades: ArcSwap<VecDeque<Trade>>,
     pub symbol: String,
     pub scaler: Scaler,
@@ -39,7 +39,7 @@ impl MarketState {
         MarketState {
             current_book: ArcSwap::from_pointee(initial_book),
             is_syncing: tokio::sync::RwLock::new(true), // Start in syncing state
-            metrics: ArcSwap::from_pointee(initial_metrics),
+            metrics: tokio::sync::RwLock::new(initial_metrics),
             recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::INITIAL_STARTING_CAPACITY)),
             symbol,
             scaler,

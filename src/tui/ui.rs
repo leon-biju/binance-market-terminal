@@ -41,7 +41,10 @@ fn duration_to_string(dur: std::time::Duration) -> String {
 }
 
 fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool, uptime: std::time::Duration) {
-    let metrics = state.metrics.load();
+    // Try to read metrics, fallback to defaults if lock is held
+    let (orderbook_lag_ms, trade_lag_ms, updates_per_second) = state.metrics.try_read()
+        .map(|m| (m.orderbook_lag_ms, m.trade_lag_ms, m.updates_per_second))
+        .unwrap_or((None, None, 0.0));
     
     let is_syncing = state.is_syncing.try_read()
         .map(|guard| *guard)
@@ -78,15 +81,14 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
             Span::raw(" | "),
             Span::raw("Depth: "),
             depth_text,
-            //Span::raw(format!(" ({}/{})", metrics.bid_depth, metrics.ask_depth)),
             Span::raw(" | "),
             Span::raw("Orderbook Lag: "),
-            format_lag(metrics.orderbook_lag_ms),
+            format_lag(orderbook_lag_ms),
             Span::raw(" | "),
             Span::raw("Trade Lag: "),
-            format_lag(metrics.trade_lag_ms),
+            format_lag(trade_lag_ms),
             Span::raw(" | "),
-            Span::raw(format!("Updates/s: {:.1}", metrics.updates_per_second)),
+            Span::raw(format!("Updates/s: {:.1}", updates_per_second)),
         ]),
     ];
     
@@ -187,19 +189,22 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         Span::styled("─".repeat(area.width as usize - 4), Style::default().fg(Color::DarkGray)),
     ]));
     
-    let metrics = state.metrics.load();
+    // Try read, use defaults otherwise
+    let (mid_price, spread, imbalance_ratio) = state.metrics.try_read()
+        .map(|m| (m.mid_price, m.spread, m.imbalance_ratio))
+        .unwrap_or((None, None, None));
     
     lines.push(Line::from(vec![
         Span::raw("  Mid Price:  "),
-        Span::styled(format_opt_decimal(metrics.mid_price, 2), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(format_opt_decimal(mid_price, 2), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
     ]));
     
     lines.push(Line::from(vec![
         Span::raw("  Spread:     "),
-        Span::styled(format_opt_decimal(metrics.spread, 4), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(format_opt_decimal(spread, 4), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ]));
     
-    let imbalance_color = metrics.imbalance_ratio.map(|ratio| {
+    let imbalance_color = imbalance_ratio.map(|ratio| {
         if ratio > rust_decimal::Decimal::from(0) {
             Color::Green
         } else if ratio < rust_decimal::Decimal::from(0) {
@@ -211,7 +216,7 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     lines.push(Line::from(vec![
         Span::raw("  Imbalance:  "),
-        Span::styled(format_opt_decimal(metrics.imbalance_ratio, 3), Style::default().fg(imbalance_color).add_modifier(Modifier::BOLD)),
+        Span::styled(format_opt_decimal(imbalance_ratio, 3), Style::default().fg(imbalance_color).add_modifier(Modifier::BOLD)),
     ]));
     
     let paragraph = Paragraph::new(lines)
@@ -222,7 +227,12 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
 
 fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     const MAX_TRADE_HISTORY_DISPLAY: u16 = 15;
-    let metrics = state.metrics.load();
+    
+    // Try to read metrics, use defaults if lock is held
+    let (volume_1m, vwap_1m, trade_count_1m, buy_ratio_1m, total_trades) = state.metrics.try_read()
+        .map(|m| (m.volume_1m, m.vwap_1m, m.trade_count_1m, m.buy_ratio_1m, m.total_trades))
+        .unwrap_or((rust_decimal::Decimal::ZERO, None, 0, None, 0));
+    
     let recent_trades = state.recent_trades.load();
     
     // Calculate available lines: area height - 2 for borders - 1 for header - 1 for last trade section
@@ -287,25 +297,25 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     ]));
     
     // Trade metrics
-    let buy_percent = metrics.buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
+    let buy_percent = buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
     let sell_percent = buy_percent.map(|a| 100 - a);
     
-    let volume_str = if metrics.volume_1m >= rust_decimal::Decimal::from(1000) {
-        format!("{:.2}", metrics.volume_1m)
+    let volume_str = if volume_1m >= rust_decimal::Decimal::from(1000) {
+        format!("{:.2}", volume_1m)
     } else {
-        format!("{:.4}", metrics.volume_1m)
+        format!("{:.4}", volume_1m)
     };
     
     lines.push(Line::from(vec![
         Span::raw("  Volume (1m): "),
         Span::styled(volume_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  VWAP (1m): "),
-        Span::styled(format_opt_decimal(metrics.vwap_1m, 2), Style::default().fg(Color::Yellow)),
+        Span::styled(format_opt_decimal(vwap_1m, 2), Style::default().fg(Color::Yellow)),
     ]));
     
     lines.push(Line::from(vec![
         Span::raw("  Trades (1m): "),
-        Span::styled(format!("{}", metrics.trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}", trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  Buy/Sell: "),
         Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::raw(" │ "),
@@ -314,7 +324,7 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     lines.push(Line::from(vec![
         Span::raw("  Total Trades: "),
-        Span::styled(format!("{}", metrics.total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}", total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
     ]));
     
     let paragraph = Paragraph::new(lines)

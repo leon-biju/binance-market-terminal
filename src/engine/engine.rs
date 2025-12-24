@@ -20,6 +20,13 @@ pub enum EngineCommand {
     RequestSnapshot,
     Shutdown,
 }
+
+enum MetricsUpdate {
+    BookOnly { event_time: u64 },
+    TradeOnly { event_time: u64 },
+    Both { book_event_time: u64, trade_event_time: u64 },
+}
+
 pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
     pub sync_state: SyncState,
@@ -87,32 +94,33 @@ impl MarketDataEngine {
         });
     }
 
-    fn update_metrics(&mut self) {
+    fn update_metrics(&mut self, update_type: MetricsUpdate) {
         self.update_counter += 1;
 
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.last_rate_calc_time).as_secs_f64();
 
-
         if elapsed >= 1.0 {
             self.updates_per_second = self.update_counter as f64 / elapsed;
-            
-
             self.last_rate_calc_time = now;
             self.update_counter = 0;
         }
             
-        let metrics = MarketMetrics::compute(
-            &self.book,
-            &self.recent_trades,
-            &self.scaler,
-            self.updates_per_second,
-            self.last_update_event_time,
-            self.last_trade_event_time,
-            self.total_trades,
-        );
-        
-        self.state.metrics.store(Arc::new(metrics));
+        if let Ok(mut metrics) = self.state.metrics.try_write() {
+            match update_type {
+                MetricsUpdate::BookOnly { event_time } => {
+                    metrics.compute_book_metrics(&self.book, &self.scaler, event_time);
+                }
+                MetricsUpdate::TradeOnly { event_time } => {
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time);
+                }
+                MetricsUpdate::Both { book_event_time, trade_event_time } => {
+                    metrics.compute_book_metrics(&self.book, &self.scaler, book_event_time);
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, trade_event_time);
+                }
+            }
+            metrics.update_performance_metrics(self.updates_per_second);
+        }
     }
 
     async fn handle_command(&mut self, cmd: EngineCommand) -> Result<bool> {
@@ -123,7 +131,13 @@ impl MarketDataEngine {
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
-                self.update_metrics();
+                
+                // Update both metrics if we have both event times
+                if let (Some(book_event_time), Some(trade_event_time)) = 
+                    (self.last_update_event_time, self.last_trade_event_time) {
+                    self.update_metrics(MetricsUpdate::Both { book_event_time, trade_event_time });
+                }
+                
                 Ok(false)
             }
             EngineCommand::RequestSnapshot => {
@@ -140,14 +154,13 @@ impl MarketDataEngine {
 
     async fn handle_ws_trade(&mut self, trade: Trade) {
         self.total_trades += 1;
-        self.last_trade_event_time = Some(trade.event_time);
+        let event_time = trade.event_time;
+        self.last_trade_event_time = Some(event_time);
 
-
-        let cutoff_time = trade.event_time.saturating_sub(60_000); // anything older than this is stale and will be removed
+        let cutoff_time = event_time.saturating_sub(60_000);
         
         self.recent_trades.push_back(trade);
         
-        // Remove trades older than 1 minute (60000 milliseconds)
         while let Some(oldest) = self.recent_trades.front() {
             if oldest.event_time < cutoff_time {
                 self.recent_trades.pop_front();
@@ -156,20 +169,19 @@ impl MarketDataEngine {
             }
         }
         
-        //the ole switcheroo
         self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
-        self.update_metrics();
+        self.update_metrics(MetricsUpdate::TradeOnly { event_time });
     }
 
     async fn handle_ws_update(&mut self, update: crate::binance::types::DepthUpdate) -> Result<()> {
-        self.last_update_event_time = Some(update.event_time);
+        let event_time = update.event_time;
+        self.last_update_event_time = Some(event_time);
 
         match self.sync_state.process_delta(update) {
             SyncOutcome::Updates(updates) => {
                 for update in updates {
                     self.book.apply_update(&update, &self.scaler)?;
                 }
-                // the ole switcheroo
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
             }
@@ -181,7 +193,7 @@ impl MarketDataEngine {
             SyncOutcome::NoUpdates => {}
         }
 
-        self.update_metrics();
+        self.update_metrics(MetricsUpdate::BookOnly { event_time });
 
         Ok(())
     }

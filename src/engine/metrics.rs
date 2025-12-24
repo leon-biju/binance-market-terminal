@@ -29,39 +29,43 @@ pub struct MarketMetrics {
 
 
 impl MarketMetrics {
-    pub fn compute(
+    // Compute only orderbook-related metrics
+    pub fn compute_book_metrics(
+        &mut self,
         book: &OrderBook,
-        recent_trades: &VecDeque<Trade>,
         scaler: &Scaler,
-        updates_per_second: f64,
-        last_update_event_time: Option<u64>,
-        last_trade_event_time: Option<u64>,
-        total_trades: u64,
-    ) -> Self {
-
-        let spread = book.spread()
+        event_time: u64,
+    ) {
+        self.spread = book.spread()
             .map(|spread_ticks| scaler.ticks_to_price(spread_ticks));
 
-        let mid_price = book.mid_price()
+        self.mid_price = book.mid_price()
             .map(|price| scaler.ticks_to_price(price));
 
         // magic 10 value here todo: replace this
-        let imbalance_ratio = book.imbalance_ratio(10).map(Decimal::from_f64_retain).flatten();
+        self.imbalance_ratio = book.imbalance_ratio(10).map(Decimal::from_f64_retain).flatten();
         
-        // Compute trade metrics from recent_trades
-        let last_trade = recent_trades.back();
-        let last_price = last_trade.map(|t| t.price);
-        let last_qty = last_trade.map(|t| t.quantity);
-        
-        // Calculate metrics for last 1 minute
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         
-        let trade_count_1m = recent_trades.iter().count() as u64;
+        self.orderbook_lag_ms = Some(now_ms.saturating_sub(event_time));
+    }
 
-        let volume_1m = recent_trades.iter()
+    pub fn compute_trade_metrics(
+        &mut self,
+        recent_trades: &VecDeque<Trade>,
+        total_trades: u64,
+        event_time: u64,
+    ) {
+        let last_trade = recent_trades.back();
+        self.last_price = last_trade.map(|t| t.price);
+        self.last_qty = last_trade.map(|t| t.quantity);
+        
+        self.trade_count_1m = recent_trades.iter().count() as u64;
+
+        self.volume_1m = recent_trades.iter()
             .map(|t| t.quantity)
             .sum();
 
@@ -73,41 +77,29 @@ impl MarketMetrics {
             .filter(|t| !t.is_buyer_maker)
             .count() as u64;
         
-        let buy_ratio_1m = if trade_count_1m > 0 {
-            Some(buy_count_1m as f64 / trade_count_1m as f64)
+        self.buy_ratio_1m = if self.trade_count_1m > 0 {
+            Some(buy_count_1m as f64 / self.trade_count_1m as f64)
         } else { 
             None
         };
         
-        let vwap_1m = if volume_1m > Decimal::ZERO {
-            Some(volume_price_sum_1m / volume_1m)
+        self.vwap_1m = if self.volume_1m > Decimal::ZERO {
+            Some(volume_price_sum_1m / self.volume_1m)
         } else {
             None
         };
 
+        self.total_trades = total_trades;
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         
-        // calculate lag
-        let orderbook_lag_ms = last_update_event_time
-            .map(|evt_time| now_ms.saturating_sub(evt_time));
-        
-        let trade_lag_ms = last_trade_event_time
-            .map(|evt_time| now_ms.saturating_sub(evt_time));
-        
-        Self { 
-            spread,
-            mid_price,
-            imbalance_ratio,
-            last_price,
-            last_qty,
-            volume_1m,
-            trade_count_1m,
-            total_trades,
-            buy_ratio_1m,
-            vwap_1m,
-            updates_per_second,
-            orderbook_lag_ms,
-            trade_lag_ms,
-        }
-        
+        self.trade_lag_ms = Some(now_ms.saturating_sub(event_time));
+    }
+
+    pub fn update_performance_metrics(&mut self, updates_per_second: f64) {
+        self.updates_per_second = updates_per_second;
     }
 }
