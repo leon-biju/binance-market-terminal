@@ -14,15 +14,13 @@ pub fn render(frame: &mut Frame, app_data: &super::App) {
         .constraints([
             Constraint::Length(3),  // Header
             Constraint::Min(15),    // Order book and trades
-            Constraint::Length(5),  // Market metrics
             Constraint::Length(1),  // Footer
         ])
         .split(frame.area());
 
     render_header(frame, chunks[0], &app_data.state, app_data.frozen, app_data.start_time.elapsed());
     render_main(frame, chunks[1], &app_data.state);
-    render_metrics(frame, chunks[2], &app_data.state);
-    render_footer(frame, chunks[3], app_data.update_interval_ms);
+    render_footer(frame, chunks[2], app_data.update_interval_ms);
     
 }
 
@@ -143,7 +141,11 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     // ASK header
     lines.push(Line::from(vec![
-        Span::styled("  ASK", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled("  ASKS", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(" ".repeat(7)),
+        Span::styled("Price", Style::default().add_modifier(Modifier::UNDERLINED)),
+        Span::raw(" ".repeat(7)),
+        Span::styled("Quantity", Style::default().add_modifier(Modifier::UNDERLINED)),
     ]));
     
     // Get top 5 level bids and asks as decimals
@@ -152,65 +154,101 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     // Display asks (top 5, reversed so highest ask is at top)
     for (price, qty) in asks.iter().rev() {
         lines.push(Line::from(vec![
-            Span::styled(format!(" {:<12}", price), Style::default().fg(Color::Red)),
-            Span::raw(" | "),
-            Span::raw(format!("{:>10}", qty)),
+            Span::raw("  "),
+            Span::styled(format!("{:>12}", price), Style::default().fg(Color::Red)),
+            Span::raw("  │  "),
+            Span::raw(format!("{:>12}", qty)),
         ]));
     }
     
     // Separator
     lines.push(Line::from(vec![
-        Span::raw("─".repeat(area.width as usize - 2)),
+        Span::styled("─".repeat(area.width as usize - 2), Style::default().fg(Color::DarkGray)),
     ]));
     
     // Display bids (top 5)
     for (price, qty) in bids.iter() {
         lines.push(Line::from(vec![
-            Span::styled(format!(" {:<12}", price), Style::default().fg(Color::Green)),
-            Span::raw(" | "),
-            Span::raw(format!("{:>10}", qty)),
+            Span::raw("  "),
+            Span::styled(format!("{:>12}", price), Style::default().fg(Color::Green)),
+            Span::raw("  │  "),
+            Span::raw(format!("{:>12}", qty)),
         ]));
     }
     
     // BID footer
     lines.push(Line::from(vec![
-        Span::styled("  BID", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled("  BIDS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    // Add separator and metrics
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("─".repeat(area.width as usize - 4), Style::default().fg(Color::DarkGray)),
+    ]));
+    
+    let metrics = state.metrics.load();
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Mid Price:  "),
+        Span::styled(format_opt_decimal(metrics.mid_price, 2), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Spread:     "),
+        Span::styled(format_opt_decimal(metrics.spread, 4), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    let imbalance_color = metrics.imbalance_ratio.map(|ratio| {
+        if ratio > rust_decimal::Decimal::from(0) {
+            Color::Green
+        } else if ratio < rust_decimal::Decimal::from(0) {
+            Color::Red
+        } else {
+            Color::White
+        }
+    }).unwrap_or(Color::White);
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Imbalance:  "),
+        Span::styled(format_opt_decimal(metrics.imbalance_ratio, 3), Style::default().fg(imbalance_color).add_modifier(Modifier::BOLD)),
     ]));
     
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Order Book (Top 10)"));
+        .block(Block::default().borders(Borders::ALL).title("Order Book (L2)"));
     
     frame.render_widget(paragraph, area);
 }
 
 fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+    const MAX_TRADE_HISTORY_DISPLAY: u16 = 15;
     let metrics = state.metrics.load();
     let recent_trades = state.recent_trades.load();
     
     // Calculate available lines: area height - 2 for borders - 1 for header - 1 for last trade section
-    let available_lines = (area.height.saturating_sub(5)).min(15) as usize;
+    let available_lines = (area.height.saturating_sub(5)).min(MAX_TRADE_HISTORY_DISPLAY) as usize;
     
     let mut lines = vec![];
     
-    // Last trade section
+    // Last trade section with better formatting
     lines.push(Line::from(vec![
-        Span::styled("Last Trade:", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled("Last Trade", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
     ]));
     
     if let (Some(price), Some(qty)) = (metrics.last_price, metrics.last_qty) {
         let side = recent_trades.back().map(|t| t.side()).unwrap_or(crate::binance::types::Side::Buy);
         let (side_text, side_color) = match side {
-            crate::binance::types::Side::Buy => ("BUY", Color::Green),
+            crate::binance::types::Side::Buy => ("BUY ", Color::Green),
             crate::binance::types::Side::Sell => ("SELL", Color::Red),
         };
         
         lines.push(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(format!("{}", price), Style::default().fg(Color::Cyan)),
             Span::raw("  "),
+            Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
+            Span::raw("  "),
+            Span::styled(format!("{}", price), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw("  │  "),
             Span::raw(format!("{}", qty)),
-            Span::raw("  "),
-            Span::styled(side_text, Style::default().fg(side_color)),
         ]));
     } else {
         lines.push(Line::from(vec![
@@ -226,104 +264,59 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     // Display trades from newest to oldest so most recent appears at top
     for trade in recent_trades.iter().rev().take(trades_to_display) {
         let (side_text, side_color) = match trade.side() {
-            crate::binance::types::Side::Buy => ("BUY", Color::Green),
+            crate::binance::types::Side::Buy => ("BUY ", Color::Green),
             crate::binance::types::Side::Sell => ("SELL", Color::Red),
         };
         
         lines.push(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(format!("{:>9}", trade.price), Style::default().fg(Color::Cyan)),
-            Span::raw("  "),
-            Span::raw(format!("{:>8}", trade.quantity)),
             Span::raw("  "),
             Span::styled(side_text, Style::default().fg(side_color)),
+            Span::raw(" "),
+            Span::styled(format!("{:>10}", trade.price), Style::default().fg(Color::Cyan)),
+            Span::raw("  │  "),
+            Span::raw(format!("{:>10}", trade.quantity)),
         ]));
     }
     
+    // Add separator and total trades at bottom
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("─".repeat(area.width as usize - 4), Style::default().fg(Color::DarkGray)),
+    ]));
+    
+    // Trade metrics
+    let buy_percent = metrics.buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
+    let sell_percent = buy_percent.map(|a| 100 - a);
+    
+    let volume_str = if metrics.volume_1m >= rust_decimal::Decimal::from(1000) {
+        format!("{:.2}", metrics.volume_1m)
+    } else {
+        format!("{:.4}", metrics.volume_1m)
+    };
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Volume (1m): "),
+        Span::styled(volume_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw("  │  VWAP (1m): "),
+        Span::styled(format_opt_decimal(metrics.vwap_1m, 2), Style::default().fg(Color::Yellow)),
+    ]));
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Trades (1m): "),
+        Span::styled(format!("{}", metrics.trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw("  │  Buy/Sell: "),
+        Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::raw(" │ "),
+        Span::styled(format!("{}%", format_opt_int(sell_percent)), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    lines.push(Line::from(vec![
+        Span::raw("  Total Trades: "),
+        Span::styled(format!("{}", metrics.total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]));
+    
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Trade Flow"));
-    
-    frame.render_widget(paragraph, area);
-}
-
-fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(area);
-    
-    // Left panel: Orderbook Metrics
-    render_orderbook_metrics(frame, chunks[0], state);
-    
-    // Right panel: Trade Flow Metrics
-    render_trade_metrics(frame, chunks[1], state);
-}
-
-fn render_orderbook_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
-    let metrics = state.metrics.load();
-    
-    let line1 = Line::from(vec![
-        Span::raw("Mid Price:     "),
-        Span::styled(format_opt_decimal(metrics.mid_price, 3), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-    ]);
-    
-    let line2 = Line::from(vec![
-        Span::raw("Spread:        "),
-        Span::styled(format_opt_decimal(metrics.spread, 3), Style::default().fg(Color::Yellow)),
-    ]);
-    
-    let line3 = Line::from(vec![
-        Span::raw("Imbalance:     "),
-        Span::raw(format_opt_decimal(metrics.imbalance_ratio, 3)),
-    ]);
-    
-    let paragraph = Paragraph::new(vec![line1, line2, line3])
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("Orderbook Metrics"));
-    
-    frame.render_widget(paragraph, area);
-}
-
-fn render_trade_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
-    let metrics = state.metrics.load();
-    
-    let buy_percent = metrics.buy_ratio_1m
-        .map(|a| (a * 100.0).round() as u32);
-    let sell_percent = buy_percent
-        .map(|a| 100 - a);
-
-
-    
-    let line1 = Line::from(vec![
-        Span::raw("Volume (1m):   "),
-        Span::styled(metrics.volume_1m.to_string(), Style::default().fg(Color::Cyan)),
-        Span::raw("  |  VWAP: "),
-        Span::raw(format_opt_decimal(metrics.vwap_1m, 3)),
-    ]);
-    
-
-    let line2 = Line::from(vec![
-        Span::raw("Trades/s:      "),
-        Span::raw(format!("{:.1}", metrics.updates_per_second)),
-        Span::raw("  |  Total Count: "),
-        Span::raw(metrics.total_trades.to_string()),
-    ]);
-    
-    let line3 = Line::from(vec![
-        Span::raw("Buy/Sell:      "),
-        Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green)),
-        Span::raw(" / "),
-        Span::styled(format!("{}%", format_opt_int(sell_percent)), Style::default().fg(Color::Red)),
-    ]);
-    
-    let paragraph = Paragraph::new(vec![line1, line2, line3])
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("Trade Flow Metrics (Past 1 minute)"));
+        .block(Block::default().borders(Borders::ALL).title("Recent Trades"));
     
     frame.render_widget(paragraph, area);
 }
