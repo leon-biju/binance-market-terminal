@@ -1,12 +1,12 @@
-use std::{fmt::{Debug, format}, sync::Arc};
+use std::{sync::Arc};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use crate::{binance::types::Trade, engine::state::MarketState, tui::app};
+use crate::{engine::state::MarketState};
 
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let chunks = Layout::default()

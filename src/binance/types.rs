@@ -1,5 +1,3 @@
-use std::fmt::write;
-
 use rand::Rng;
 use rust_decimal::Decimal;
 use serde::Deserialize;

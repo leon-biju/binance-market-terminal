@@ -9,7 +9,6 @@ use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
-use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::MarketState;
 
 // max trades that can be stored
