@@ -9,13 +9,21 @@ use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
-use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::MarketState;
+
+// max trades that can be stored
+pub const INITIAL_STARTING_CAPACITY: usize = 1000;
 
 pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
     RequestSnapshot,
     Shutdown,
+}
+
+enum MetricsUpdate {
+    BookOnly { event_time: u64 },
+    TradeOnly { event_time: u64 },
+    Both { book_event_time: u64, trade_event_time: u64 },
 }
 
 pub struct MarketDataEngine {
@@ -28,6 +36,16 @@ pub struct MarketDataEngine {
 
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
+
+    update_counter : u64,
+    last_rate_calc_time: std::time::Instant,
+    updates_per_second: f64,
+
+    last_update_event_time: Option<u64>,
+    last_trade_event_time: Option<u64>,
+
+    total_trades: u64,
+
 }
 
 impl MarketDataEngine {
@@ -37,7 +55,7 @@ impl MarketDataEngine {
         let mut sync_state = SyncState::new();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
-        let state = Arc::new(MarketState::new(book.clone()));
+        let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
         
         let engine = MarketDataEngine {
             state: state.clone(),
@@ -45,9 +63,15 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::new(),
+            recent_trades: VecDeque::with_capacity(INITIAL_STARTING_CAPACITY),
             command_tx: command_tx.clone(),
             command_rx,
+            update_counter: 0,
+            last_rate_calc_time: std::time::Instant::now(),
+            updates_per_second: 0.0,
+            last_update_event_time: None,
+            last_trade_event_time: None,
+            total_trades: 0,
         };
         
         (engine, command_tx, state) 
@@ -63,70 +87,100 @@ impl MarketDataEngine {
                     let _ = tx.send(EngineCommand::NewSnapshot(snapshot)).await;
                 }
                 Err(e) => {
-                    eprintln!("Fatal error, failed to fetch snapshot: {}", e);
+                    tracing::error!("Fatal error, failed to fetch snapshot: {}", e);
                 }
             }
         });
     }
 
-    fn update_metrics(&mut self) {
-        let is_syncing = self.state.is_syncing.try_read()
-            .map(|guard| *guard)
-            .unwrap_or(true);
+    fn update_metrics(&mut self, update_type: MetricsUpdate) {
+        self.update_counter += 1;
+
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.last_rate_calc_time).as_secs_f64();
+
+        if elapsed >= 1.0 {
+            self.updates_per_second = self.update_counter as f64 / elapsed;
+            self.last_rate_calc_time = now;
+            self.update_counter = 0;
+        }
             
-        let metrics = MarketMetrics::compute(
-            &self.book,
-            &self.recent_trades,
-            &self.scaler,
-            is_syncing
-        );
-        
-        self.state.metrics.store(Arc::new(metrics));
+        if let Ok(mut metrics) = self.state.metrics.try_write() {
+            match update_type {
+                MetricsUpdate::BookOnly { event_time } => {
+                    metrics.compute_book_metrics(&self.book, &self.scaler, event_time);
+                }
+                MetricsUpdate::TradeOnly { event_time } => {
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time);
+                }
+                MetricsUpdate::Both { book_event_time, trade_event_time } => {
+                    metrics.compute_book_metrics(&self.book, &self.scaler, book_event_time);
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, trade_event_time);
+                }
+            }
+            metrics.update_performance_metrics(self.updates_per_second);
+        }
     }
 
     async fn handle_command(&mut self, cmd: EngineCommand) -> Result<bool> {
         match cmd {
             EngineCommand::NewSnapshot(snapshot) => {
-                println!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
+                tracing::info!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
-                self.update_metrics();
+                
+                // Update both metrics if we have both event times
+                if let (Some(book_event_time), Some(trade_event_time)) = 
+                    (self.last_update_event_time, self.last_trade_event_time) {
+                    self.update_metrics(MetricsUpdate::Both { book_event_time, trade_event_time });
+                }
+                
                 Ok(false)
             }
             EngineCommand::RequestSnapshot => {
-                println!("Gap detected, requesting new snapshot...");
+                tracing::warn!("Gap detected, requesting new snapshot...");
                 self.spawn_snapshot_fetch();
                 Ok(false)
             }
             EngineCommand::Shutdown => {
-                println!("Shutting down engine...");
+                tracing::info!("Shutting down engine...");
                 Ok(true)
             }
         }
     }
 
     async fn handle_ws_trade(&mut self, trade: Trade) {
-        const MAX_TRADES: usize = 1000;
+        self.total_trades += 1;
+        let event_time = trade.event_time;
+        self.last_trade_event_time = Some(event_time);
+
+        let cutoff_time = event_time.saturating_sub(60_000);
         
         self.recent_trades.push_back(trade);
-        if self.recent_trades.len() > MAX_TRADES {
-            self.recent_trades.pop_front();
+        
+        while let Some(oldest) = self.recent_trades.front() {
+            if oldest.event_time < cutoff_time {
+                self.recent_trades.pop_front();
+            } else {
+                break;
+            }
         }
-
-        //the ole switcheroo
+        
         self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
-        self.update_metrics();
+        self.update_metrics(MetricsUpdate::TradeOnly { event_time });
     }
 
     async fn handle_ws_update(&mut self, update: crate::binance::types::DepthUpdate) -> Result<()> {
+        let event_time = update.event_time;
+        self.last_update_event_time = Some(event_time);
+
         match self.sync_state.process_delta(update) {
             SyncOutcome::Updates(updates) => {
                 for update in updates {
-                    self.book.apply_update(&update, &self.scaler);
+                    self.book.apply_update(&update, &self.scaler)?;
                 }
-                // the ole switcheroo
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
             }
@@ -138,7 +192,7 @@ impl MarketDataEngine {
             SyncOutcome::NoUpdates => {}
         }
 
-        self.update_metrics();
+        self.update_metrics(MetricsUpdate::BookOnly { event_time });
 
         Ok(())
     }
@@ -149,7 +203,7 @@ impl MarketDataEngine {
         let trade_stream = stream::connect_trade_stream(&symbol).await?;
         
         
-        println!("Engine running for symbol: {}", self.symbol);
+        tracing::info!("Engine running for symbol: {}", self.symbol);
 
         tokio::pin!(depth_stream);
         tokio::pin!(trade_stream);
@@ -168,7 +222,7 @@ impl MarketDataEngine {
                     match result {
                         Ok(trade) => self.handle_ws_trade(trade).await,
                         Err(e) => {
-                            eprintln!("Trade websocket stream error: {}", e);
+                            tracing::error!("Trade websocket stream error: {}", e);
                             break;
                         }
                     }
@@ -178,7 +232,7 @@ impl MarketDataEngine {
                     match result {
                         Ok(update) => self.handle_ws_update(update).await?,
                         Err(e) => {
-                            eprintln!("Depth websocket stream error: {}", e);
+                            tracing::error!("Depth websocket stream error: {}", e);
                             break;
                         }
                     }

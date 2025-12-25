@@ -1,7 +1,8 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque};
 
 use arc_swap::ArcSwap;
-use crate::{binance::types::Trade, book::orderbook::OrderBook, engine::metrics::MarketMetrics};
+use rust_decimal::Decimal;
+use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}, engine::metrics::MarketMetrics};
 
 // This struct is all the tui will see
 // Anything the tui needs goes here
@@ -11,16 +12,15 @@ pub struct MarketState {
     // TUI can read this instantly and lock-free.
     pub current_book: ArcSwap<OrderBook>, 
     pub is_syncing: tokio::sync::RwLock<bool>,
-    pub metrics: ArcSwap<MarketMetrics>,
+    pub metrics: tokio::sync::RwLock<MarketMetrics>,
     pub recent_trades: ArcSwap<VecDeque<Trade>>,
-
+    pub symbol: String,
+    pub scaler: Scaler,
 }
 
 impl MarketState {
-    pub fn new(initial_book: OrderBook) -> Self {
+    pub fn new(initial_book: OrderBook, symbol: String, scaler: Scaler) -> Self {
         let initial_metrics = MarketMetrics {
-            best_bid: None,
-            best_ask: None,
             spread: None,
             mid_price: None,
             imbalance_ratio: None,
@@ -28,17 +28,35 @@ impl MarketState {
             last_qty: None,
             volume_1m: rust_decimal::Decimal::ZERO,
             trade_count_1m: 0,
+            total_trades: 0,
+            buy_ratio_1m: None,
             vwap_1m: None,
-            last_update_time: std::time::Instant::now(),
             updates_per_second: 0.0,
-            is_syncing: true,
+            orderbook_lag_ms: None,
+            trade_lag_ms: None,
         };
 
         MarketState {
             current_book: ArcSwap::from_pointee(initial_book),
             is_syncing: tokio::sync::RwLock::new(true), // Start in syncing state
-            metrics: ArcSwap::from_pointee(initial_metrics),
-            recent_trades: ArcSwap::from_pointee(VecDeque::new())
+            metrics: tokio::sync::RwLock::new(initial_metrics),
+            recent_trades: ArcSwap::from_pointee(VecDeque::with_capacity(super::engine::INITIAL_STARTING_CAPACITY)),
+            symbol,
+            scaler,
         }
+    }
+
+    pub fn top_n_depth(&self, n: usize) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
+        let (bids, asks) = self.current_book.load().top_n_depth(n);
+
+        let bids_decimal = bids.iter()
+            .map(|(price, qty)| (self.scaler.ticks_to_price(*price), self.scaler.ticks_to_qty(*qty)))
+            .collect();
+
+        let asks_decimal = asks.iter()
+            .map(|(price, qty)| (self.scaler.ticks_to_price(*price), self.scaler.ticks_to_qty(*qty)))
+            .collect();
+
+        (bids_decimal, asks_decimal)
     }
 }
