@@ -50,7 +50,6 @@ impl DepthSnapshot {
 pub struct DepthUpdate {
     #[serde(rename = "E")]
     pub event_time: u64,
-    pub s: String, // symbol
     #[serde(rename = "U")]
     pub first_update_id: u64,
     #[serde(rename = "u")]
@@ -107,7 +106,6 @@ impl DepthUpdate {
 
         Self {
             event_time: 0,
-            s: "FAKE".to_string(),
             first_update_id: last_update_id + 1,
             final_update_id: last_update_id + n_levels as u64 - 1,
             received_at: std::time::Instant::now(),
@@ -133,9 +131,6 @@ impl std::fmt::Display for Side {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Trade {
-    pub s: String, // symbol
-    #[serde(rename = "t")]
-    pub trade_id: u64,
     #[serde(rename = "p")]
     pub price: Decimal,
     #[serde(rename = "q")]
