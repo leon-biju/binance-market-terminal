@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-
+use std::time;
 use rust_decimal::Decimal;
 
 use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}};
@@ -24,7 +24,9 @@ pub struct MarketMetrics {
 
     // latency tracking
     pub orderbook_lag_ms: Option<u64>,
-    pub trade_lag_ms: Option<u64>
+    pub orderbook_network_lag_ms: Option<u64>,
+    pub trade_lag_ms: Option<u64>,
+    pub trade_network_lag_ms: Option<u64>,
 }
 
 
@@ -35,6 +37,7 @@ impl MarketMetrics {
         book: &OrderBook,
         scaler: &Scaler,
         event_time: u64,
+        received_at: std::time::Instant,
     ) {
         self.spread = book.spread()
             .map(|spread_ticks| scaler.ticks_to_price(spread_ticks));
@@ -50,7 +53,17 @@ impl MarketMetrics {
             .unwrap()
             .as_millis() as u64;
         
-        self.orderbook_lag_ms = Some(now_ms.saturating_sub(event_time));
+        let orderbook_lag_ms = now_ms.saturating_sub(event_time);
+        self.orderbook_lag_ms = Some(orderbook_lag_ms);
+        let now_instant = std::time::Instant::now();
+        
+        //oh please make this nicer i beg. so messy
+        self.orderbook_network_lag_ms = Some(
+            orderbook_lag_ms -
+            now_instant
+                .duration_since(received_at)
+                .as_millis() as u64
+        );
     }
 
     pub fn compute_trade_metrics(
@@ -58,6 +71,7 @@ impl MarketMetrics {
         recent_trades: &VecDeque<Trade>,
         total_trades: u64,
         event_time: u64,
+        received_at: std::time::Instant,
     ) {
         let last_trade = recent_trades.back();
         self.last_price = last_trade.map(|t| t.price);
@@ -91,12 +105,21 @@ impl MarketMetrics {
 
         self.total_trades = total_trades;
 
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let now_ms = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
-        self.trade_lag_ms = Some(now_ms.saturating_sub(event_time));
+        let trade_lag_ms = now_ms.saturating_sub(event_time);
+        self.trade_lag_ms = Some(trade_lag_ms);
+
+        let now_instant = time::Instant::now();
+
+        self.trade_network_lag_ms = Some(
+            trade_lag_ms -
+            now_instant
+                .duration_since(received_at)
+                .as_millis() as u64
+        );
     }
 
     pub fn update_performance_metrics(&mut self, updates_per_second: f64) {

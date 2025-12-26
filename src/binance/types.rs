@@ -57,6 +57,9 @@ pub struct DepthUpdate {
     pub final_update_id: u64,
     pub b: Vec<[String; 2]>, // bids
     pub a: Vec<[String; 2]>, // asks
+
+    #[serde(skip, default = "std::time::Instant::now")]
+    pub received_at: std::time::Instant,
 }
 
 impl DepthUpdate {
@@ -107,6 +110,7 @@ impl DepthUpdate {
             s: "FAKE".to_string(),
             first_update_id: last_update_id + 1,
             final_update_id: last_update_id + n_levels as u64 - 1,
+            received_at: std::time::Instant::now(),
             b: bids,
             a: asks
         }
@@ -129,8 +133,6 @@ impl std::fmt::Display for Side {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Trade {
-    #[serde(rename = "E")]
-    pub event_time: u64,
     pub s: String, // symbol
     #[serde(rename = "t")]
     pub trade_id: u64,
@@ -142,6 +144,9 @@ pub struct Trade {
     pub trade_time: u64,
     #[serde(rename = "m")]
     pub is_buyer_maker: bool,
+
+    #[serde(skip, default = "std::time::Instant::now")]
+    pub received_at: std::time::Instant,
 }
 
 impl Trade {
