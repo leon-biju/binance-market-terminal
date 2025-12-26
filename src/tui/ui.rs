@@ -42,9 +42,9 @@ fn duration_to_string(dur: std::time::Duration) -> String {
 
 fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool, uptime: std::time::Duration) {
     // Try to read metrics, fallback to defaults if lock is held
-    let (orderbook_lag_ms, trade_lag_ms, updates_per_second) = state.metrics.try_read()
-        .map(|m| (m.orderbook_lag_ms, m.trade_lag_ms, m.updates_per_second))
-        .unwrap_or((None, None, 0.0));
+    let (orderbook_lag_ms, orderbook_network_lag_ms, trade_lag_ms, trade_network_lag_ms, updates_per_second) = state.metrics.try_read()
+        .map(|m| (m.orderbook_lag_ms, m.orderbook_network_lag_ms, m.trade_lag_ms, m.trade_network_lag_ms, m.updates_per_second))
+        .unwrap_or((None, None, None, None, 0.0));
     
     let is_syncing = state.is_syncing.try_read()
         .map(|guard| *guard)
@@ -60,9 +60,6 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
     
     let format_symbol = Span::styled(&state.symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
 
-    // Format depth status
-    let depth_text = Span::raw("Ok");
-    
     // Format lag with color coding
     let format_lag = |lag_ms: Option<u64>| -> Span {
         match lag_ms {
@@ -72,6 +69,14 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
             Some(ms) => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Red)),
         }
     };
+
+    // Format network lag (dimmer, in parentheses)
+    let format_net_lag = |lag_ms: Option<u64>| -> Span {
+        match lag_ms {
+            None => Span::styled("(net: N/A)", Style::default().fg(Color::DarkGray)),
+            Some(ms) => Span::styled(format!("(net: {}ms)", ms), Style::default().fg(Color::DarkGray)),
+        }
+    };
     
     let left_header_text = vec![
         Line::from(vec![
@@ -79,16 +84,17 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
             Span::raw(" | "),
             status,
             Span::raw(" | "),
-            Span::raw("Depth: "),
-            depth_text,
-            Span::raw(" | "),
-            Span::raw("Orderbook Lag: "),
+            Span::raw("Book: "),
             format_lag(orderbook_lag_ms),
+            Span::raw(" "),
+            format_net_lag(orderbook_network_lag_ms),
             Span::raw(" | "),
-            Span::raw("Trade Lag: "),
+            Span::raw("Trade: "),
             format_lag(trade_lag_ms),
+            Span::raw(" "),
+            format_net_lag(trade_network_lag_ms),
             Span::raw(" | "),
-            Span::raw(format!("Updates/s: {:.1}", updates_per_second)),
+            Span::raw(format!("{:.0}/s", updates_per_second)),
         ]),
     ];
     
