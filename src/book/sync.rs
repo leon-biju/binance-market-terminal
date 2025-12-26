@@ -87,7 +87,6 @@ mod tests {
             final_update_id: final_id,
             b: vec![],
             a: vec![],
-            received_at: std::time::Instant::now(),
         }
     }
 

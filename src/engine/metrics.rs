@@ -4,6 +4,19 @@ use rust_decimal::Decimal;
 
 use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}};
 
+fn compute_latencies(event_time: u64, received_at: time::Instant) -> (u64, u64) {
+    let now_ms = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    
+    let total_lag_ms = now_ms.saturating_sub(event_time);
+    let processing_ms = received_at.elapsed().as_millis() as u64;
+    let network_lag_ms = total_lag_ms.saturating_sub(processing_ms);
+    
+    (total_lag_ms, network_lag_ms)
+}
+
 pub struct MarketMetrics {
     // Orderbook metrics
     pub spread: Option<Decimal>,
@@ -48,22 +61,9 @@ impl MarketMetrics {
         // magic 10 value here todo: replace this
         self.imbalance_ratio = book.imbalance_ratio(10).map(Decimal::from_f64_retain).flatten();
         
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        
-        let orderbook_lag_ms = now_ms.saturating_sub(event_time);
-        self.orderbook_lag_ms = Some(orderbook_lag_ms);
-        let now_instant = std::time::Instant::now();
-        
-        //oh please make this nicer i beg. so messy
-        self.orderbook_network_lag_ms = Some(
-            orderbook_lag_ms -
-            now_instant
-                .duration_since(received_at)
-                .as_millis() as u64
-        );
+        let (total_lag, network_lag) = compute_latencies(event_time, received_at);
+        self.orderbook_lag_ms = Some(total_lag);
+        self.orderbook_network_lag_ms = Some(network_lag);
     }
 
     pub fn compute_trade_metrics(
@@ -105,21 +105,9 @@ impl MarketMetrics {
 
         self.total_trades = total_trades;
 
-        let now_ms = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        let trade_lag_ms = now_ms.saturating_sub(event_time);
-        self.trade_lag_ms = Some(trade_lag_ms);
-
-        let now_instant = time::Instant::now();
-
-        self.trade_network_lag_ms = Some(
-            trade_lag_ms -
-            now_instant
-                .duration_since(received_at)
-                .as_millis() as u64
-        );
+        let (total_lag, network_lag) = compute_latencies(event_time, received_at);
+        self.trade_lag_ms = Some(total_lag);
+        self.trade_network_lag_ms = Some(network_lag);
     }
 
     pub fn update_performance_metrics(&mut self, updates_per_second: f64) {
