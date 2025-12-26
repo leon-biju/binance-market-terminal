@@ -1,3 +1,4 @@
+use std::time;
 use rand::Rng;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -50,13 +51,18 @@ impl DepthSnapshot {
 pub struct DepthUpdate {
     #[serde(rename = "E")]
     pub event_time: u64,
-    pub s: String, // symbol
     #[serde(rename = "U")]
     pub first_update_id: u64,
     #[serde(rename = "u")]
     pub final_update_id: u64,
     pub b: Vec<[String; 2]>, // bids
     pub a: Vec<[String; 2]>, // asks
+}
+
+#[derive(Debug)]
+pub struct ReceivedDepthUpdate {
+    pub update: DepthUpdate,
+    pub received_at: time::Instant,
 }
 
 impl DepthUpdate {
@@ -104,7 +110,6 @@ impl DepthUpdate {
 
         Self {
             event_time: 0,
-            s: "FAKE".to_string(),
             first_update_id: last_update_id + 1,
             final_update_id: last_update_id + n_levels as u64 - 1,
             b: bids,
@@ -129,11 +134,6 @@ impl std::fmt::Display for Side {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Trade {
-    #[serde(rename = "E")]
-    pub event_time: u64,
-    pub s: String, // symbol
-    #[serde(rename = "t")]
-    pub trade_id: u64,
     #[serde(rename = "p")]
     pub price: Decimal,
     #[serde(rename = "q")]
@@ -142,6 +142,12 @@ pub struct Trade {
     pub trade_time: u64,
     #[serde(rename = "m")]
     pub is_buyer_maker: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReceivedTrade {
+    pub trade: Trade,
+    pub received_at: time::Instant,
 }
 
 impl Trade {

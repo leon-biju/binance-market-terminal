@@ -33,7 +33,9 @@ impl MarketState {
             vwap_1m: None,
             updates_per_second: 0.0,
             orderbook_lag_ms: None,
+            orderbook_network_lag_ms: None,
             trade_lag_ms: None,
+            trade_network_lag_ms: None,
         };
 
         MarketState {

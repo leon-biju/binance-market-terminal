@@ -83,7 +83,6 @@ mod tests {
     fn mk_update(first: u64, final_id: u64, event_time: u64) -> DepthUpdate {
         DepthUpdate {
             event_time,
-            s: "BTCUSDT".to_string(),
             first_update_id: first,
             final_update_id: final_id,
             b: vec![],
