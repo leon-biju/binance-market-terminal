@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
 
-use crate::binance::types::{DepthSnapshot, Trade};
+use crate::binance::types::{DepthSnapshot, Trade, ReceivedTrade, ReceivedDepthUpdate};
 use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
@@ -93,7 +93,8 @@ impl MarketDataEngine {
         });
     }
 
-    fn update_metrics(&mut self, update_type: MetricsUpdate) {
+    //todo: remove the godforsaken MetricsUpdate enum, holy code clutter btw
+    fn update_metrics(&mut self, update_type: MetricsUpdate, received_at: std::time::Instant) {
         self.update_counter += 1;
 
         let now = std::time::Instant::now();
@@ -108,14 +109,14 @@ impl MarketDataEngine {
         if let Ok(mut metrics) = self.state.metrics.try_write() {
             match update_type {
                 MetricsUpdate::BookOnly { event_time } => {
-                    metrics.compute_book_metrics(&self.book, &self.scaler, event_time);
+                    metrics.compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
                 }
                 MetricsUpdate::TradeOnly { event_time } => {
-                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time);
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time, received_at);
                 }
                 MetricsUpdate::Both { book_event_time, trade_event_time } => {
-                    metrics.compute_book_metrics(&self.book, &self.scaler, book_event_time);
-                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, trade_event_time);
+                    metrics.compute_book_metrics(&self.book, &self.scaler, book_event_time, received_at);
+                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, trade_event_time, received_at);
                 }
             }
             metrics.update_performance_metrics(self.updates_per_second);
@@ -134,7 +135,7 @@ impl MarketDataEngine {
                 // Update both metrics if we have both event times
                 if let (Some(book_event_time), Some(trade_event_time)) = 
                     (self.last_update_event_time, self.last_trade_event_time) {
-                    self.update_metrics(MetricsUpdate::Both { book_event_time, trade_event_time });
+                    self.update_metrics(MetricsUpdate::Both { book_event_time, trade_event_time }, std::time::Instant::now());
                 }
                 
                 Ok(false)
@@ -151,17 +152,18 @@ impl MarketDataEngine {
         }
     }
 
-    async fn handle_ws_trade(&mut self, trade: Trade) {
+    async fn handle_ws_trade(&mut self, received: ReceivedTrade) {
         self.total_trades += 1;
-        let event_time = trade.event_time;
+        let event_time = received.trade.trade_time;
+        let received_at = received.received_at;
         self.last_trade_event_time = Some(event_time);
 
         let cutoff_time = event_time.saturating_sub(60_000);
         
-        self.recent_trades.push_back(trade);
+        self.recent_trades.push_back(received.trade);
         
         while let Some(oldest) = self.recent_trades.front() {
-            if oldest.event_time < cutoff_time {
+            if oldest.trade_time < cutoff_time {
                 self.recent_trades.pop_front();
             } else {
                 break;
@@ -169,14 +171,15 @@ impl MarketDataEngine {
         }
         
         self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
-        self.update_metrics(MetricsUpdate::TradeOnly { event_time });
+        self.update_metrics(MetricsUpdate::TradeOnly { event_time }, received_at);
     }
 
-    async fn handle_ws_update(&mut self, update: crate::binance::types::DepthUpdate) -> Result<()> {
-        let event_time = update.event_time;
+    async fn handle_ws_update(&mut self, received: ReceivedDepthUpdate) -> Result<()> {
+        let event_time = received.update.event_time;
+        let received_at = received.received_at;
         self.last_update_event_time = Some(event_time);
 
-        match self.sync_state.process_delta(update) {
+        match self.sync_state.process_delta(received.update) {
             SyncOutcome::Updates(updates) => {
                 for update in updates {
                     self.book.apply_update(&update, &self.scaler)?;
@@ -192,7 +195,7 @@ impl MarketDataEngine {
             SyncOutcome::NoUpdates => {}
         }
 
-        self.update_metrics(MetricsUpdate::BookOnly { event_time });
+        self.update_metrics(MetricsUpdate::BookOnly { event_time }, received_at);
 
         Ok(())
     }
