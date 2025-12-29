@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -6,78 +6,61 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use crate::{engine::state::MarketState};
+use crate::engine::state::{MarketState, MarketSnapshot};
 
 pub fn render(frame: &mut Frame, app_data: &super::App) {
+    let snapshot = app_data.state.load();
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Min(15),    // Order book and trades
-            Constraint::Length(1),  // Footer
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
         ])
         .split(frame.area());
 
-    render_header(frame, chunks[0], &app_data.state, app_data.frozen, app_data.start_time.elapsed());
-    render_main(frame, chunks[1], &app_data.state);
+    render_header(frame, chunks[0], &app_data.state, &snapshot, app_data.frozen, app_data.start_time.elapsed());
+    render_main(frame, chunks[1], &app_data.state, &snapshot);
     render_footer(frame, chunks[2], app_data.update_interval_ms);
-    
 }
 
-fn duration_to_string(dur: std::time::Duration) -> String {
-    let total_secs = dur.as_secs();
+fn render_header(
+    frame: &mut Frame,
+    area: Rect,
+    state: &Arc<MarketState>,
+    snapshot: &MarketSnapshot,
+    frozen: bool,
+    uptime: std::time::Duration,
+) {
+    let metrics = &snapshot.metrics;
 
-
-    let seconds = total_secs % 60;
-    let minutes = (total_secs / 60) % 60;
-    let hours   = total_secs / 3600;
-
-    if hours > 0 {
-        format!("{}:{:02}:{:02}", hours, minutes, seconds)
-    } else {
-        format!("{:02}:{:02}", minutes, seconds)
-    }
-
-}
-
-fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen: bool, uptime: std::time::Duration) {
-    // Try to read metrics, fallback to defaults if lock is held
-    let (orderbook_lag_ms, orderbook_network_lag_ms, trade_lag_ms, trade_network_lag_ms, updates_per_second) = state.metrics.try_read()
-        .map(|m| (m.orderbook_lag_ms, m.orderbook_network_lag_ms, m.trade_lag_ms, m.trade_network_lag_ms, m.updates_per_second))
-        .unwrap_or((None, None, None, None, 0.0));
-    
-    let is_syncing = state.is_syncing.try_read()
-        .map(|guard| *guard)
-        .unwrap_or(true);
-    
     let status = if frozen {
         Span::styled("FROZEN", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
-    } else if is_syncing {
+    } else if snapshot.is_syncing {
         Span::styled("SYNCING", Style::default().fg(Color::Yellow))
     } else {
         Span::styled("LIVE", Style::default().fg(Color::Green))
     };
-    
+
     let format_symbol = Span::styled(&state.symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
 
-    // Format lag with color coding
     let format_lag = |lag_ms: Option<u64>| -> Span {
         match lag_ms {
-            None => Span::raw("N/A"),
-            Some(ms) if ms < 100 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Green)),
-            Some(ms) if ms < 500 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Yellow)),
+            Some(ms) if ms < 50 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Green)),
+            Some(ms) if ms < 200 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Yellow)),
             Some(ms) => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Red)),
+            None => Span::styled("--", Style::default().fg(Color::DarkGray)),
         }
     };
 
-    // Format network lag (dimmer, in parentheses)
     let format_net_lag = |lag_ms: Option<u64>| -> Span {
         match lag_ms {
-            None => Span::styled("(net: N/A)", Style::default().fg(Color::DarkGray)),
             Some(ms) => Span::styled(format!("(net: {}ms)", ms), Style::default().fg(Color::DarkGray)),
+            None => Span::raw(""),
         }
     };
-    
+
     let left_header_text = vec![
         Line::from(vec![
             format_symbol,
@@ -85,69 +68,57 @@ fn render_header(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, frozen
             status,
             Span::raw(" | "),
             Span::raw("Book: "),
-            format_lag(orderbook_lag_ms),
+            format_lag(metrics.orderbook_lag_ms),
             Span::raw(" "),
-            format_net_lag(orderbook_network_lag_ms),
+            format_net_lag(metrics.orderbook_network_lag_ms),
             Span::raw(" | "),
             Span::raw("Trade: "),
-            format_lag(trade_lag_ms),
+            format_lag(metrics.trade_lag_ms),
             Span::raw(" "),
-            format_net_lag(trade_network_lag_ms),
+            format_net_lag(metrics.trade_network_lag_ms),
             Span::raw(" | "),
-            Span::raw(format!("{:.0}/s", updates_per_second)),
+            Span::raw(format!("{:.0}/s", metrics.updates_per_second)),
         ]),
     ];
-    
+
     let right_header_text = vec![
         Line::from(vec![
             Span::styled("Uptime: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(duration_to_string(uptime)),
         ]),
     ];
-    
+
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(80),
-            Constraint::Percentage(20),
-        ])
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(area);
 
     let left_header = Paragraph::new(left_header_text)
         .block(Block::default()
-        .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
-        .title("Market Data Engine"));
+            .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
+            .title("Market Data Engine"));
 
-     let right_header = Paragraph::new(right_header_text)
+    let right_header = Paragraph::new(right_header_text)
         .alignment(ratatui::layout::Alignment::Right)
-        .block(Block::default()
-        .borders(Borders::RIGHT | Borders::TOP | Borders::BOTTOM));
+        .block(Block::default().borders(Borders::RIGHT | Borders::TOP | Borders::BOTTOM));
 
-    
     frame.render_widget(left_header, header_chunks[0]);
     frame.render_widget(right_header, header_chunks[1]);
 }
 
-fn render_main(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+fn render_main(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, snapshot: &MarketSnapshot) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
-    
-    // Left panel: Order Book
-    render_orderbook(frame, chunks[0], state);
-    
-    // Right panel: Trade Flow
-    render_trade_flow(frame, chunks[1], state);
+
+    render_orderbook(frame, chunks[0], state, snapshot);
+    render_trade_flow(frame, chunks[1], snapshot);
 }
 
-fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, snapshot: &MarketSnapshot) {
     let mut lines = vec![];
-    
-    // ASK header
+
     lines.push(Line::from(vec![
         Span::styled("  ASKS", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         Span::raw(" ".repeat(7)),
@@ -155,11 +126,10 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         Span::raw(" ".repeat(7)),
         Span::styled("Quantity", Style::default().add_modifier(Modifier::UNDERLINED)),
     ]));
-    
-    // Get top 5 level bids and asks as decimals
-    let (bids, asks) = state.top_n_depth(5);
 
-    // Display asks (top 5, reversed so highest ask is at top)
+    // Use snapshot directly - no locks!
+    let (bids, asks) = snapshot.top_n_depth(5, &state.scaler);
+
     for (price, qty) in asks.iter().rev() {
         lines.push(Line::from(vec![
             Span::raw("  "),
@@ -168,13 +138,11 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
             Span::raw(format!("{:>12}", qty)),
         ]));
     }
-    
-    // Separator
+
     lines.push(Line::from(vec![
         Span::styled("─".repeat(area.width as usize - 2), Style::default().fg(Color::DarkGray)),
     ]));
-    
-    // Display bids (top 5)
+
     for (price, qty) in bids.iter() {
         lines.push(Line::from(vec![
             Span::raw("  "),
@@ -183,69 +151,64 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
             Span::raw(format!("{:>12}", qty)),
         ]));
     }
-    
-    // BID footer
+
     lines.push(Line::from(vec![
         Span::styled("  BIDS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
     ]));
-    
-    // Add separator and metrics
+
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("─".repeat(area.width as usize - 4), Style::default().fg(Color::DarkGray)),
     ]));
-    
-    // Try read, use defaults otherwise
-    let (mid_price, spread, imbalance_ratio) = state.metrics.try_read()
-        .map(|m| (m.mid_price, m.spread, m.imbalance_ratio))
-        .unwrap_or((None, None, None));
-    
+
+    let metrics = &snapshot.metrics;
+
     lines.push(Line::from(vec![
         Span::raw("  Mid Price:  "),
-        Span::styled(format_opt_decimal(mid_price, 2), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format_opt_decimal(metrics.mid_price, 2),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ),
     ]));
-    
+
     lines.push(Line::from(vec![
         Span::raw("  Spread:     "),
-        Span::styled(format_opt_decimal(spread, 4), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format_opt_decimal(metrics.spread, 4),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
     ]));
-    
-    let imbalance_color = imbalance_ratio.map(|ratio| {
-        if ratio > rust_decimal::Decimal::from(0) {
-            Color::Green
-        } else if ratio < rust_decimal::Decimal::from(0) {
-            Color::Red
-        } else {
-            Color::White
-        }
+
+    let imbalance_color = metrics.imbalance_ratio.map(|ratio| {
+        if ratio > rust_decimal::Decimal::ZERO { Color::Green }
+        else if ratio < rust_decimal::Decimal::ZERO { Color::Red }
+        else { Color::White }
     }).unwrap_or(Color::White);
-    
+
     lines.push(Line::from(vec![
         Span::raw("  Imbalance:  "),
-        Span::styled(format_opt_decimal(imbalance_ratio, 3), Style::default().fg(imbalance_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format_opt_decimal(metrics.imbalance_ratio, 3),
+            Style::default().fg(imbalance_color).add_modifier(Modifier::BOLD),
+        ),
     ]));
-    
+
     let paragraph = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title("Order Book (L2)"));
-    
+
     frame.render_widget(paragraph, area);
 }
 
-fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+fn render_trade_flow(frame: &mut Frame, area: Rect, snapshot: &MarketSnapshot) {
     const MAX_TRADE_HISTORY_DISPLAY: u16 = 15;
-    
-    // Try to read metrics, use defaults if lock is held
-    let (volume_1m, vwap_1m, trade_count_1m, buy_ratio_1m, total_trades) = state.metrics.try_read()
-        .map(|m| (m.volume_1m, m.vwap_1m, m.trade_count_1m, m.buy_ratio_1m, m.total_trades))
-        .unwrap_or((rust_decimal::Decimal::ZERO, None, 0, None, 0));
-    
-    let recent_trades = state.recent_trades.load();
-    
-    // Calculate available lines: area height - 2 for borders - 1 for header - 1 for last trade section
+
+    let metrics = &snapshot.metrics;
+    let recent_trades = &snapshot.recent_trades;
+
     let available_lines = (area.height.saturating_sub(5)).min(MAX_TRADE_HISTORY_DISPLAY) as usize;
-    
+
     let mut lines = vec![];
-    
+
     // Last trade section with better formatting
     lines.push(Line::from(vec![
         Span::styled("Last Trade", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
@@ -303,25 +266,25 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     ]));
     
     // Trade metrics
-    let buy_percent = buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
+    let buy_percent = metrics.buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
     let sell_percent = buy_percent.map(|a| 100 - a);
     
-    let volume_str = if volume_1m >= rust_decimal::Decimal::from(1000) {
-        format!("{:.2}", volume_1m)
+    let volume_str = if metrics.volume_1m >= rust_decimal::Decimal::from(1000) {
+        format!("{:.2}", metrics.volume_1m)
     } else {
-        format!("{:.4}", volume_1m)
+        format!("{:.4}", metrics.volume_1m)
     };
     
     lines.push(Line::from(vec![
         Span::raw("  Volume (1m): "),
         Span::styled(volume_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  VWAP (1m): "),
-        Span::styled(format_opt_decimal(vwap_1m, 2), Style::default().fg(Color::Yellow)),
+        Span::styled(format_opt_decimal(metrics.vwap_1m, 2), Style::default().fg(Color::Yellow)),
     ]));
     
     lines.push(Line::from(vec![
         Span::raw("  Trades (1m): "),
-        Span::styled(format!("{}", trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}", metrics.trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  Buy/Sell: "),
         Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::raw(" │ "),
@@ -330,12 +293,12 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     
     lines.push(Line::from(vec![
         Span::raw("  Total Trades: "),
-        Span::styled(format!("{}", total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}", metrics.total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
     ]));
     
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Recent Trades"));
-    
+        .block(Block::default().borders(Borders::ALL).title("Trade Flow"));
+
     frame.render_widget(paragraph, area);
 }
 
@@ -347,7 +310,7 @@ fn render_footer(frame: &mut Frame, area: Rect, update_interval_ms: u64) {
             Constraint::Percentage(20),
         ])
         .split(area);
-    let left_footer = Paragraph::new("Press 'q' or 'Esc' to quit | Press 'f' to freeze/unfreeze | Press '↑/↓' to adjust display speed ");
+    let left_footer = Paragraph::new("'q' or 'Esc' to quit | 'f' to freeze/unfreeze | '↑/↓' to adjust display speed ");
 
     let right_footer = Paragraph::new(format!("Display update interval: ({}ms)", update_interval_ms))
         .alignment(ratatui::layout::Alignment::Right);
@@ -356,13 +319,24 @@ fn render_footer(frame: &mut Frame, area: Rect, update_interval_ms: u64) {
     frame.render_widget(right_footer, footer_chunks[1]);
 }
 
-fn format_opt_int<T: std::fmt::Display>(opt: Option<T>) -> String {
-    opt.map(|v| v.to_string()).unwrap_or_else(|| "N/A".to_string())
+fn duration_to_string(dur: std::time::Duration) -> String {
+    let total_secs = dur.as_secs();
+    let seconds = total_secs % 60;
+    let minutes = (total_secs / 60) % 60;
+    let hours = total_secs / 3600;
+
+    if hours > 0 {
+        format!("{}:{:02}:{:02}", hours, minutes, seconds)
+    } else {
+        format!("{}:{:02}", minutes, seconds)
+    }
 }
 
 fn format_opt_decimal(opt: Option<rust_decimal::Decimal>, precision: u32) -> String {
-    opt.map(|d| {
-        let rounded = d.round_dp(precision);
-        rounded.normalize().to_string()
-    }).unwrap_or_else(|| "N/A".to_string())
+    opt.map(|d| format!("{:.1$}", d, precision as usize))
+        .unwrap_or_else(|| "--".to_string())
+}
+
+fn format_opt_int<T: std::fmt::Display>(opt: Option<T>) -> String {
+    opt.map(|v| v.to_string()).unwrap_or_else(|| "N/A".to_string())
 }

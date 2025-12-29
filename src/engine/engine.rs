@@ -10,7 +10,8 @@ use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
-use crate::engine::state::MarketState;
+use crate::engine::metrics::MarketMetrics;
+use crate::engine::state::{MarketSnapshot, MarketState};
 
 // max trades that can be stored
 pub const INITIAL_STARTING_CAPACITY: usize = 1000;
@@ -23,11 +24,15 @@ pub enum EngineCommand {
 
 pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
-    pub sync_state: SyncState,
-    pub book: OrderBook,
-    pub scaler: Scaler,
-    pub symbol: String,
-    pub recent_trades: VecDeque<Trade>,
+    
+    
+    sync_state: SyncState,
+    book: OrderBook,
+    scaler: Scaler,
+    symbol: String,
+    recent_trades: VecDeque<Trade>,
+    metrics: MarketMetrics,
+    is_syncing: bool,
 
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
@@ -35,16 +40,16 @@ pub struct MarketDataEngine {
     update_counter : u64,
     last_rate_calc_time: std::time::Instant,
     updates_per_second: f64,
-
-    last_update_event_time: Option<u64>,
-    last_trade_event_time: Option<u64>,
-
     total_trades: u64,
 
 }
 
 impl MarketDataEngine {
-    pub fn new(symbol: String, initial_snapshot: DepthSnapshot, scaler: Scaler) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
+    pub fn new(
+        symbol: String,
+        initial_snapshot: DepthSnapshot,
+        scaler: Scaler
+    ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
         let mut sync_state = SyncState::new();
@@ -54,22 +59,36 @@ impl MarketDataEngine {
         
         let engine = MarketDataEngine {
             state: state.clone(),
+
             sync_state,
             book,
             scaler,
             symbol,
             recent_trades: VecDeque::with_capacity(INITIAL_STARTING_CAPACITY),
+            metrics: MarketMetrics::default(),
+            is_syncing: true,
+
             command_tx: command_tx.clone(),
             command_rx,
+
             update_counter: 0,
             last_rate_calc_time: std::time::Instant::now(),
             updates_per_second: 0.0,
-            last_update_event_time: None,
-            last_trade_event_time: None,
             total_trades: 0,
         };
         
         (engine, command_tx, state) 
+    }
+
+    fn publish_snapshot(&self) {
+        let snapshot = MarketSnapshot {
+            book: self.book.clone(),
+            metrics: self.metrics.clone(),
+            recent_trades: self.recent_trades.clone(),
+            is_syncing: self.is_syncing,
+        };
+
+        self.state.snapshot.store(Arc::new(snapshot));
     }
 
     fn spawn_snapshot_fetch(&self) {
@@ -90,28 +109,78 @@ impl MarketDataEngine {
         });
     }
 
-    fn update_metrics(&mut self, is_trade: bool, event_time: u64, received_at: std::time::Instant) {
+    fn update_rate_counter(&mut self) {
         self.update_counter += 1;
+        let now = time::Instant::now();
+        let elapsed_secs = now.duration_since(self.last_rate_calc_time).as_secs_f64();
 
-        let now = std::time::Instant::now();
-        let elapsed = now.duration_since(self.last_rate_calc_time).as_secs_f64();
-
-        if elapsed >= 1.0 {
-            self.updates_per_second = self.update_counter as f64 / elapsed;
+        if elapsed_secs >= 1.0 {
+            self.updates_per_second = self.update_counter as f64 / elapsed_secs;
             self.last_rate_calc_time = now;
             self.update_counter = 0;
         }
-            
-        if let Ok(mut metrics) = self.state.metrics.try_write() {
-            if is_trade {
-                metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time, received_at);
+    }
+
+    fn handle_ws_trade(&mut self, received: ReceivedTrade) {
+        self.total_trades += 1;
+        self.update_rate_counter();
+
+        let event_time = received.trade.trade_time;
+        let received_at = received.received_at;
+        let cutoff_time = event_time.saturating_sub(60_000);
+        
+        self.recent_trades.push_back(received.trade);
+        
+        while let Some(oldest) = self.recent_trades.front() {
+            if oldest.trade_time < cutoff_time {
+                self.recent_trades.pop_front();
             } else {
-                metrics.compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
+                break;
             }
-            metrics.update_performance_metrics(self.updates_per_second);
-        } else {
-            tracing::trace!("Metrics lock contention, skipping update");
         }
+        
+        //update metrics in place
+        self.metrics.compute_trade_metrics(
+            &self.recent_trades,
+            self.total_trades,
+            event_time,
+            received_at);
+
+        self.metrics.update_performance_metrics(self.updates_per_second);
+
+        self.publish_snapshot();
+    }
+
+    async fn handle_ws_depth_update(&mut self, received: ReceivedDepthUpdate) -> Result<()> {
+        self.update_rate_counter();
+        let event_time = received.update.event_time;
+        let received_at = received.received_at;
+
+        match self.sync_state.process_delta(received.update) {
+            SyncOutcome::Updates(updates) => {
+                for update in updates {
+                    self.book.apply_update(&update, &self.scaler)?;
+                }
+                self.is_syncing = false;
+            }
+            SyncOutcome::GapBetweenUpdates => {
+                self.command_tx.send(EngineCommand::RequestSnapshot).await?;
+                self.sync_state = SyncState::new();
+                self.is_syncing = true;
+            }
+            SyncOutcome::NoUpdates => {}
+        }
+
+        self.metrics.compute_book_metrics(
+            &self.book, 
+            &self.scaler,
+            event_time,
+            received_at
+        );
+
+        self.publish_snapshot();
+
+        Ok(())
     }
 
     async fn handle_command(&mut self, cmd: EngineCommand) -> Result<bool> {
@@ -121,10 +190,9 @@ impl MarketDataEngine {
 
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
+                self.publish_snapshot();
 
-                self.state.current_book.store(Arc::new(self.book.clone()));
-                *self.state.is_syncing.write().await = false;
-
+                self.is_syncing = false;
                 Ok(false)
             }
             EngineCommand::RequestSnapshot => {
@@ -139,54 +207,6 @@ impl MarketDataEngine {
         }
     }
 
-    fn handle_ws_trade(&mut self, received: ReceivedTrade) {
-        self.total_trades += 1;
-        let event_time = received.trade.trade_time;
-        let received_at = received.received_at;
-        self.last_trade_event_time = Some(event_time);
-
-        let cutoff_time = event_time.saturating_sub(60_000);
-        
-        self.recent_trades.push_back(received.trade);
-        
-        while let Some(oldest) = self.recent_trades.front() {
-            if oldest.trade_time < cutoff_time {
-                self.recent_trades.pop_front();
-            } else {
-                break;
-            }
-        }
-        
-        self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
-        self.update_metrics(true, event_time, received_at);
-    }
-
-    async fn handle_ws_update(&mut self, received: ReceivedDepthUpdate) -> Result<()> {
-        let event_time = received.update.event_time;
-        let received_at = received.received_at;
-        self.last_update_event_time = Some(event_time);
-
-        match self.sync_state.process_delta(received.update) {
-            SyncOutcome::Updates(updates) => {
-                for update in updates {
-                    self.book.apply_update(&update, &self.scaler)?;
-                }
-                self.state.current_book.store(Arc::new(self.book.clone()));
-                *self.state.is_syncing.write().await = false;
-            }
-            SyncOutcome::GapBetweenUpdates => {
-                self.command_tx.send(EngineCommand::RequestSnapshot).await?;
-                self.sync_state = SyncState::new();
-                *self.state.is_syncing.write().await = true;
-            }
-            SyncOutcome::NoUpdates => {}
-        }
-
-        self.update_metrics(false, event_time, received_at);
-
-        Ok(())
-    }
-    
     pub async fn run(mut self) -> Result<()> {
         let symbol = self.symbol.clone();
         let depth_stream = stream::connect_depth_stream(&symbol).await?;
@@ -220,7 +240,7 @@ impl MarketDataEngine {
                 
                 Some(result) = depth_stream.next() => {
                     match result {
-                        Ok(update) => self.handle_ws_update(update).await?,
+                        Ok(update) => self.handle_ws_depth_update(update).await?,
                         Err(e) => {
                             tracing::error!("Depth websocket stream error: {}", e);
                             break;

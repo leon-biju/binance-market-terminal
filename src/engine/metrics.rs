@@ -17,6 +17,7 @@ fn compute_latencies(event_time: u64, received_at: time::Instant) -> (u64, u64) 
     (total_lag_ms, network_lag_ms)
 }
 
+#[derive(Clone)]
 pub struct MarketMetrics {
     // Orderbook metrics
     pub spread: Option<Decimal>,
@@ -41,7 +42,6 @@ pub struct MarketMetrics {
     pub trade_lag_ms: Option<u64>,
     pub trade_network_lag_ms: Option<u64>,
 }
-
 
 impl MarketMetrics {
     // Compute only orderbook-related metrics
@@ -112,5 +112,28 @@ impl MarketMetrics {
 
     pub fn update_performance_metrics(&mut self, updates_per_second: f64) {
         self.updates_per_second = updates_per_second;
+    }
+}
+
+
+impl Default for MarketMetrics {
+    fn default() -> Self {
+        MarketMetrics {
+            spread: None,
+            mid_price: None,
+            imbalance_ratio: None,
+            last_price: None,
+            last_qty: None,
+            volume_1m: rust_decimal::Decimal::ZERO,
+            trade_count_1m: 0,
+            total_trades: 0,
+            buy_ratio_1m: None,
+            vwap_1m: None,
+            updates_per_second: 0.0,
+            orderbook_lag_ms: None,
+            orderbook_network_lag_ms: None,
+            trade_lag_ms: None,
+            trade_network_lag_ms: None,
+        }
     }
 }
