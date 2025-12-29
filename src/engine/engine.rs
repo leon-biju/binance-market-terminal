@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time;
+use std::time::{self, Duration};
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
@@ -15,6 +15,10 @@ use crate::engine::state::{MarketSnapshot, MarketState};
 
 // max trades that can be stored
 pub const INITIAL_STARTING_CAPACITY: usize = 1000;
+
+const MAX_RECONNECT_ATTEMPTS: u32 = 10;
+const INITIAL_BACKOFF_MS: u64 = 100;
+const MAX_BACKOFF_MS: u64 = 30_000;
 
 pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
@@ -207,16 +211,71 @@ impl MarketDataEngine {
         }
     }
 
+    fn calculate_backoff(attempt: u32) -> Duration {
+        let backoff_ms = INITIAL_BACKOFF_MS * 2u64.saturating_pow(attempt);
+        Duration::from_millis(backoff_ms.min(MAX_BACKOFF_MS))
+    }
+
+    async fn connect_with_retry<T, F, Fut>(
+        connect_fn: F,
+        stream_name: &str,
+    ) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let mut attempt = 0;
+
+        loop {
+            match connect_fn().await {
+                Ok(stream) => {
+                    if attempt > 0 {
+                        tracing::info!("{} reconnected after {} attempts", stream_name, attempt);
+                    }
+                    return Ok(stream);
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= MAX_RECONNECT_ATTEMPTS {
+                        tracing::error!(
+                            "{} failed to reconnect after {} attempts: {}",
+                            stream_name,
+                            attempt,
+                            e
+                        );
+                        return Err(e);
+                    }
+
+                    let backoff = Self::calculate_backoff(attempt);
+                    tracing::warn!(
+                        "{} connection failed (attempt {}/{}): {}. Retrying in {:?}",
+                        stream_name,
+                        attempt,
+                        MAX_RECONNECT_ATTEMPTS,
+                        e,
+                        backoff
+                    );
+                    tokio::time::sleep(backoff).await;
+                }
+            }
+        }
+    }
+
     pub async fn run(mut self) -> Result<()> {
         let symbol = self.symbol.clone();
-        let depth_stream = stream::connect_depth_stream(&symbol).await?;
-        let trade_stream = stream::connect_trade_stream(&symbol).await?;
-        
         
         tracing::info!("Engine running for symbol: {}", self.symbol);
 
-        tokio::pin!(depth_stream);
-        tokio::pin!(trade_stream);
+        let mut depth_stream = Box::pin(Self::connect_with_retry(
+            || stream::connect_depth_stream(&symbol),
+            "Depth stream",
+        ).await?);
+
+        let mut trade_stream = Box::pin(Self::connect_with_retry(
+            || stream::connect_trade_stream(&symbol),
+            "Trade stream",
+        ).await?);
+
         loop {
             tokio::select! {
                 biased;
@@ -233,7 +292,13 @@ impl MarketDataEngine {
                         Ok(trade) => self.handle_ws_trade(trade),
                         Err(e) => {
                             tracing::error!("Trade websocket stream error: {}", e);
-                            break;
+                            self.is_syncing = true;
+                            self.publish_snapshot();
+                            
+                            trade_stream = Box::pin(Self::connect_with_retry(
+                                || stream::connect_trade_stream(&symbol),
+                                "Trade stream",
+                            ).await?);
                         }
                     }
                 }
@@ -243,7 +308,17 @@ impl MarketDataEngine {
                         Ok(update) => self.handle_ws_depth_update(update).await?,
                         Err(e) => {
                             tracing::error!("Depth websocket stream error: {}", e);
-                            break;
+                            self.is_syncing = true;
+                            self.publish_snapshot();
+                            
+                            // reset sync state - we need a fresh snapshot after reconnect
+                            self.sync_state = SyncState::new();
+                            self.spawn_snapshot_fetch();
+                            
+                            depth_stream = Box::pin(Self::connect_with_retry(
+                                || stream::connect_depth_stream(&symbol),
+                                "Depth stream",
+                            ).await?);
                         }
                     }
                 }
