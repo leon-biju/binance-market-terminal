@@ -10,7 +10,7 @@ use tracing_appender::rolling;
 
 use crate::binance::snapshot;
 use crate::book::scaler;
-use crate::engine::engine::MarketDataEngine;
+use crate::engine::engine::{EngineCommand, MarketDataEngine};
 use crate::tui::App;
 
 fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let (engine, _command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler);
+    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler);
     
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {
@@ -70,7 +70,11 @@ async fn main() -> Result<()> {
     app.run().await?;
     
     // TUI exited, engine will continue running until dropped
-    drop(engine_handle);
+    command_tx.send(EngineCommand::Shutdown).await?;
+
+    if let Err(e) = engine_handle.await {
+        tracing::error!("Engine task panicked: {}", e);
+    }
     
     info!("[PROGRAM END]");
     Ok(())
