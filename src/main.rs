@@ -40,12 +40,6 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // get config toml stuff
-    let conf = config::load_config();
-
-    //DEBUG STATEMENT
-    tracing::info!("{:?}", conf);
-
     let symbol = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("Usage: orderbook-engine <symbol>");
         std::process::exit(1);
@@ -56,14 +50,17 @@ async fn main() -> Result<()> {
     info!("");
     info!("[PROGRAM START]");
 
-    info!("DEPTH SNAPSHOT FETCH FOR {}...", symbol);
+    let conf = config::load_config();
+    info!("{:?}", conf);
+
+
     let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
     info!("[DEPTH SNAPSHOT_INFO] lastUpdateId: {}", snapshot.last_update_id);
     
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, conf.initial_starting_capacity);
+    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, &conf);
     
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {

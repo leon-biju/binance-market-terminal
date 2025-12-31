@@ -7,6 +7,7 @@ pub struct Config {
     pub max_reconnect_attempts: u32,
     pub initial_backoff_ms: u64,
     pub max_backoff_ms: u64,
+    pub imbalance_depth_levels: usize,
     //pub symbols: Vec<String>,
 }
 
@@ -17,6 +18,7 @@ impl Default for Config {
             max_reconnect_attempts: 10,
             initial_backoff_ms: 100,
             max_backoff_ms: 30000,
+            imbalance_depth_levels: 10,
             //symbols: vec!["BTCUSDT".to_string()],
         }
     }

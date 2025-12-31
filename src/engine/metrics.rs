@@ -41,9 +41,17 @@ pub struct MarketMetrics {
     pub orderbook_network_lag_ms: Option<u64>,
     pub trade_lag_ms: Option<u64>,
     pub trade_network_lag_ms: Option<u64>,
+
+    imbalance_depth_levels: usize,
 }
 
 impl MarketMetrics {
+    pub fn new(imbalance_depth_levels: usize) -> Self {
+        Self{
+            imbalance_depth_levels: imbalance_depth_levels,
+            ..Default::default()
+        }
+    } 
     // Compute only orderbook-related metrics
     pub fn compute_book_metrics(
         &mut self,
@@ -59,7 +67,7 @@ impl MarketMetrics {
             .map(|price| scaler.ticks_to_price(price));
 
         // magic 10 value here todo: replace this
-        self.imbalance_ratio = book.imbalance_ratio(10).map(Decimal::from_f64_retain).flatten();
+        self.imbalance_ratio = book.imbalance_ratio(self.imbalance_depth_levels).map(Decimal::from_f64_retain).flatten();
         
         let (total_lag, network_lag) = compute_latencies(event_time, received_at);
         self.orderbook_lag_ms = Some(total_lag);
@@ -134,6 +142,7 @@ impl Default for MarketMetrics {
             orderbook_network_lag_ms: None,
             trade_lag_ms: None,
             trade_network_lag_ms: None,
+            imbalance_depth_levels: 10
         }
     }
 }

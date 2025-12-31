@@ -47,7 +47,7 @@ impl MarketDataEngine {
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
-        initial_starting_capacity: usize,
+        conf: &config::Config
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
@@ -63,8 +63,8 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::with_capacity(initial_starting_capacity),
-            metrics: MarketMetrics::default(),
+            recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
+            metrics: MarketMetrics::new(conf.imbalance_depth_levels),
             is_syncing: true,
 
             command_tx: command_tx.clone(),
