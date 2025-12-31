@@ -22,14 +22,16 @@ pub enum EngineCommand {
 
 pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
-    
+    metrics: MarketMetrics,
+    recent_trades: VecDeque<Trade>,
+
+    conf: Arc<config::Config>,
     
     sync_state: SyncState,
     book: OrderBook,
     scaler: Scaler,
     symbol: String,
-    recent_trades: VecDeque<Trade>,
-    metrics: MarketMetrics,
+    
     is_syncing: bool,
 
     command_tx: mpsc::Sender<EngineCommand>,
@@ -47,7 +49,7 @@ impl MarketDataEngine {
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
-        conf: &config::Config
+        conf: config::Config
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
@@ -55,16 +57,20 @@ impl MarketDataEngine {
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
         let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
+        let conf = Arc::new(conf);
         
         let engine = MarketDataEngine {
             state: state.clone(),
+            metrics: MarketMetrics::new(conf.imbalance_depth_levels),
+            recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
+
+            conf,
 
             sync_state,
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
-            metrics: MarketMetrics::new(conf.imbalance_depth_levels),
+            
             is_syncing: true,
 
             command_tx: command_tx.clone(),
@@ -93,9 +99,10 @@ impl MarketDataEngine {
     fn spawn_snapshot_fetch(&self) {
         let symbol = self.symbol.clone();
         let tx = self.command_tx.clone();
+        let conf = self.conf.clone();
         
         tokio::spawn(async move {
-            match snapshot::fetch_snapshot(&symbol, 1000).await {
+            match snapshot::fetch_snapshot(&symbol, conf.initial_snapshot_depth).await {
                 Ok(snapshot) => {
                     if tx.send(EngineCommand::NewSnapshot(snapshot)).await.is_err() {
                         tracing::error!("Failed to send snapshot to engine - channel closed")
@@ -206,15 +213,15 @@ impl MarketDataEngine {
         }
     }
 
-    fn calculate_backoff(attempt: u32, config: &config::Config) -> Duration {
-        let backoff_ms = config.initial_backoff_ms * 2u64.saturating_pow(attempt);
-        Duration::from_millis(backoff_ms.min(config.max_backoff_ms))
+    fn calculate_backoff(&self, attempt: u32) -> Duration {
+        let backoff_ms = self.conf.initial_backoff_ms * 2u64.saturating_pow(attempt);
+        Duration::from_millis(backoff_ms.min(self.conf.max_backoff_ms))
     }
 
     async fn connect_with_retry<T, F, Fut>(
+        &self,
         connect_fn: F,
         stream_name: &str,
-        config: &config::Config,
     ) -> Result<T>
     where
         F: Fn() -> Fut,
@@ -232,7 +239,7 @@ impl MarketDataEngine {
                 }
                 Err(e) => {
                     attempt += 1;
-                    if attempt >= config.max_reconnect_attempts {
+                    if attempt >= self.conf.max_reconnect_attempts {
                         tracing::error!(
                             "{} failed to reconnect after {} attempts: {}",
                             stream_name,
@@ -242,12 +249,12 @@ impl MarketDataEngine {
                         return Err(e);
                     }
 
-                    let backoff = Self::calculate_backoff(attempt, config);
+                    let backoff = self.calculate_backoff(attempt);
                     tracing::warn!(
                         "{} connection failed (attempt {}/{}): {}. Retrying in {:?}",
                         stream_name,
                         attempt,
-                        config.max_reconnect_attempts,
+                        self.conf.max_reconnect_attempts,
                         e,
                         backoff
                     );
@@ -257,21 +264,19 @@ impl MarketDataEngine {
         }
     }
 
-    pub async fn run(mut self, config: config::Config) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         let symbol = self.symbol.clone();
         
         tracing::info!("Engine running for symbol: {}", self.symbol);
 
-        let mut depth_stream = Box::pin(Self::connect_with_retry(
+        let mut depth_stream = Box::pin(self.connect_with_retry(
             || stream::connect_depth_stream(&symbol),
             "Depth stream",
-            &config,
         ).await?);
 
-        let mut trade_stream = Box::pin(Self::connect_with_retry(
+        let mut trade_stream = Box::pin(self.connect_with_retry(
             || stream::connect_trade_stream(&symbol),
             "Trade stream",
-            &config,
         ).await?);
 
         loop {
@@ -293,10 +298,9 @@ impl MarketDataEngine {
                             self.is_syncing = true;
                             self.publish_snapshot();
                             
-                            trade_stream = Box::pin(Self::connect_with_retry(
+                            trade_stream = Box::pin(self.connect_with_retry(
                                 || stream::connect_trade_stream(&symbol),
                                 "Trade stream",
-                                &config
                             ).await?);
                         }
                     }
@@ -314,10 +318,9 @@ impl MarketDataEngine {
                             self.sync_state = SyncState::new();
                             self.spawn_snapshot_fetch();
                             
-                            depth_stream = Box::pin(Self::connect_with_retry(
+                            depth_stream = Box::pin(self.connect_with_retry(
                                 || stream::connect_depth_stream(&symbol),
                                 "Depth stream",
-                                &config
                             ).await?);
                         }
                     }

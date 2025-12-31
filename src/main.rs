@@ -54,17 +54,17 @@ async fn main() -> Result<()> {
     info!("{:?}", conf);
 
 
-    let snapshot = snapshot::fetch_snapshot(&symbol, 1000).await?;
+    let snapshot = snapshot::fetch_snapshot(&symbol, conf.initial_snapshot_depth).await?;
     info!("[DEPTH SNAPSHOT_INFO] lastUpdateId: {}", snapshot.last_update_id);
     
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, &conf);
+    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, conf);
     
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {
-        if let Err(e) = engine.run(conf).await {
+        if let Err(e) = engine.run().await {
             tracing::error!("Engine error: {}", e);
         }
     });

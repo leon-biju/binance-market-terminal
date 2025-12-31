@@ -8,6 +8,7 @@ pub struct Config {
     pub initial_backoff_ms: u64,
     pub max_backoff_ms: u64,
     pub imbalance_depth_levels: usize,
+    pub initial_snapshot_depth: u16
     //pub symbols: Vec<String>,
 }
 
@@ -19,6 +20,7 @@ impl Default for Config {
             initial_backoff_ms: 100,
             max_backoff_ms: 30000,
             imbalance_depth_levels: 10,
+            initial_snapshot_depth: 1000,
             //symbols: vec!["BTCUSDT".to_string()],
         }
     }
