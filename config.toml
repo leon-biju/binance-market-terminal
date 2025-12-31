@@ -1,0 +1,5 @@
+# Default values - feel free to change 
+initial_starting_capacity = 1000
+max_reconnect_attempts = 10
+initial_backoff_ms = 100
+max_backoff_ms = 30000
