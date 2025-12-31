@@ -10,15 +10,9 @@ use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
+use crate::config;
 use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::{MarketSnapshot, MarketState};
-
-// max trades that can be stored
-pub const INITIAL_STARTING_CAPACITY: usize = 1000;
-
-const MAX_RECONNECT_ATTEMPTS: u32 = 10;
-const INITIAL_BACKOFF_MS: u64 = 100;
-const MAX_BACKOFF_MS: u64 = 30_000;
 
 pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
@@ -52,7 +46,8 @@ impl MarketDataEngine {
     pub fn new(
         symbol: String,
         initial_snapshot: DepthSnapshot,
-        scaler: Scaler
+        scaler: Scaler,
+        initial_starting_capacity: usize,
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
@@ -68,7 +63,7 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::with_capacity(INITIAL_STARTING_CAPACITY),
+            recent_trades: VecDeque::with_capacity(initial_starting_capacity),
             metrics: MarketMetrics::default(),
             is_syncing: true,
 
@@ -211,14 +206,15 @@ impl MarketDataEngine {
         }
     }
 
-    fn calculate_backoff(attempt: u32) -> Duration {
-        let backoff_ms = INITIAL_BACKOFF_MS * 2u64.saturating_pow(attempt);
-        Duration::from_millis(backoff_ms.min(MAX_BACKOFF_MS))
+    fn calculate_backoff(attempt: u32, config: &config::Config) -> Duration {
+        let backoff_ms = config.initial_backoff_ms * 2u64.saturating_pow(attempt);
+        Duration::from_millis(backoff_ms.min(config.max_backoff_ms))
     }
 
     async fn connect_with_retry<T, F, Fut>(
         connect_fn: F,
         stream_name: &str,
+        config: &config::Config,
     ) -> Result<T>
     where
         F: Fn() -> Fut,
@@ -236,7 +232,7 @@ impl MarketDataEngine {
                 }
                 Err(e) => {
                     attempt += 1;
-                    if attempt >= MAX_RECONNECT_ATTEMPTS {
+                    if attempt >= config.max_reconnect_attempts {
                         tracing::error!(
                             "{} failed to reconnect after {} attempts: {}",
                             stream_name,
@@ -246,12 +242,12 @@ impl MarketDataEngine {
                         return Err(e);
                     }
 
-                    let backoff = Self::calculate_backoff(attempt);
+                    let backoff = Self::calculate_backoff(attempt, config);
                     tracing::warn!(
                         "{} connection failed (attempt {}/{}): {}. Retrying in {:?}",
                         stream_name,
                         attempt,
-                        MAX_RECONNECT_ATTEMPTS,
+                        config.max_reconnect_attempts,
                         e,
                         backoff
                     );
@@ -261,7 +257,7 @@ impl MarketDataEngine {
         }
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(mut self, config: config::Config) -> Result<()> {
         let symbol = self.symbol.clone();
         
         tracing::info!("Engine running for symbol: {}", self.symbol);
@@ -269,11 +265,13 @@ impl MarketDataEngine {
         let mut depth_stream = Box::pin(Self::connect_with_retry(
             || stream::connect_depth_stream(&symbol),
             "Depth stream",
+            &config,
         ).await?);
 
         let mut trade_stream = Box::pin(Self::connect_with_retry(
             || stream::connect_trade_stream(&symbol),
             "Trade stream",
+            &config,
         ).await?);
 
         loop {
@@ -298,6 +296,7 @@ impl MarketDataEngine {
                             trade_stream = Box::pin(Self::connect_with_retry(
                                 || stream::connect_trade_stream(&symbol),
                                 "Trade stream",
+                                &config
                             ).await?);
                         }
                     }
@@ -318,6 +317,7 @@ impl MarketDataEngine {
                             depth_stream = Box::pin(Self::connect_with_retry(
                                 || stream::connect_depth_stream(&symbol),
                                 "Depth stream",
+                                &config
                             ).await?);
                         }
                     }
