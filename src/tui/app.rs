@@ -9,10 +9,12 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
+use crate::config::Config;
 use crate::engine::state::MarketState;
 
 pub struct App {
     pub state: Arc<MarketState>,
+    pub config: Arc<Config>,
     pub should_quit: bool,
     pub frozen: bool,
     pub update_interval_ms: u64,
@@ -21,9 +23,10 @@ pub struct App {
 
 impl App {
     
-    pub fn new(state: Arc<MarketState>) -> Self {
+    pub fn new(state: Arc<MarketState>, config: Arc<Config>) -> Self {
         Self {
             state,
+            config,
             should_quit: false,
             frozen: false,
             update_interval_ms: 500,

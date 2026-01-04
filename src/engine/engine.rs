@@ -51,7 +51,7 @@ impl MarketDataEngine {
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
-        conf: config::Config
+        conf: Arc<config::Config>
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
@@ -59,12 +59,12 @@ impl MarketDataEngine {
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
         let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
-        let conf = Arc::new(conf);
+        let conf = conf;
         
         let engine = MarketDataEngine {
             state: state.clone(),
-            metrics: MarketMetrics::new(conf.imbalance_depth_levels),
-            recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
+            metrics: MarketMetrics::new(conf.orderbook_imbalance_depth_levels),
+            recent_trades: VecDeque::with_capacity(conf.recent_trades_starting_capacity),
             significant_trades: VecDeque::with_capacity(conf.significant_trades_display_count),
 
             conf,
@@ -106,7 +106,7 @@ impl MarketDataEngine {
         let conf = self.conf.clone();
         
         tokio::spawn(async move {
-            match snapshot::fetch_snapshot(&symbol, conf.initial_snapshot_depth).await {
+            match snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await {
                 Ok(snapshot) => {
                     if tx.send(EngineCommand::NewSnapshot(snapshot)).await.is_err() {
                         tracing::error!("Failed to send snapshot to engine - channel closed")
