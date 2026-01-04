@@ -6,7 +6,7 @@ use anyhow::Result;
 use futures_util::StreamExt;
 use num_traits::ToPrimitive;
 
-use crate::binance::types::{DepthSnapshot, Trade, ReceivedTrade, ReceivedDepthUpdate};
+use crate::binance::types::{DepthSnapshot, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
 use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
@@ -25,7 +25,7 @@ pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
     metrics: MarketMetrics,
     recent_trades: VecDeque<Trade>,
-    significant_trades: VecDeque<Trade>,
+    significant_trades: VecDeque<SignificantTrade>,
 
     conf: Arc<config::Config>,
     
@@ -156,13 +156,19 @@ impl MarketDataEngine {
             .sum();
 
         let trade_qty = received.trade.quantity.to_f64().unwrap_or(0.0);
+        let notional_value = received.trade.price * received.trade.quantity;
 
         if one_min_volume > 0.0 && trade_qty / one_min_volume >= self.conf.significant_trade_volume_pct {
-            self.significant_trades.push_back(received.trade);
+            let volume_pct = (trade_qty / one_min_volume) * 100.0;
+            self.significant_trades.push_back(SignificantTrade::new(
+                received.trade.clone(), 
+                notional_value,
+                SignificanceReason::HighVolumePercent(volume_pct)
+            ));
 
             let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
             while let Some(oldest) = self.significant_trades.front() {
-                if oldest.trade_time < cutoff {
+                if oldest.trade.trade_time < cutoff {
                     self.significant_trades.pop_front();
                 } else {
                     break;

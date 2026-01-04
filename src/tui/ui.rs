@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -6,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use crate::engine::state::{MarketState, MarketSnapshot};
+use crate::{book::scaler::Scaler, engine::state::MarketSnapshot};
 
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let snapshot = app_data.state.load();
@@ -20,15 +19,15 @@ pub fn render(frame: &mut Frame, app_data: &super::App) {
         ])
         .split(frame.area());
 
-    render_header(frame, chunks[0], &app_data.state, &snapshot, app_data.frozen, app_data.start_time.elapsed());
-    render_main(frame, chunks[1], &app_data.state, &snapshot);
+    render_header(frame, chunks[0], &app_data.state.symbol, &snapshot, app_data.frozen, app_data.start_time.elapsed());
+    render_main(frame, chunks[1], &app_data.state.scaler, &snapshot);
     render_footer(frame, chunks[2], app_data.update_interval_ms);
 }
 
 fn render_header(
     frame: &mut Frame,
     area: Rect,
-    state: &Arc<MarketState>,
+    symbol: &str,
     snapshot: &MarketSnapshot,
     frozen: bool,
     uptime: std::time::Duration,
@@ -43,7 +42,7 @@ fn render_header(
         Span::styled("LIVE", Style::default().fg(Color::Green))
     };
 
-    let format_symbol = Span::styled(&state.symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+    let format_symbol = Span::styled(symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
 
     let format_lag = |net_lag_ms: Option<u64>, total_lag_ms: Option<u64>| -> Span {
         match (net_lag_ms, total_lag_ms) {
@@ -113,17 +112,17 @@ fn render_header(
     frame.render_widget(right_header, header_chunks[1]);
 }
 
-fn render_main(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, snapshot: &MarketSnapshot) {
+fn render_main(frame: &mut Frame, area: Rect, scaler: &Scaler, snapshot: &MarketSnapshot) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    render_orderbook(frame, chunks[0], state, snapshot);
+    render_orderbook(frame, chunks[0], scaler, snapshot);
     render_trade_flow(frame, chunks[1], snapshot);
 }
 
-fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, snapshot: &MarketSnapshot) {
+fn render_orderbook(frame: &mut Frame, area: Rect, scaler: &Scaler, snapshot: &MarketSnapshot) {
     let mut lines = vec![];
 
     lines.push(Line::from(vec![
@@ -134,8 +133,7 @@ fn render_orderbook(frame: &mut Frame, area: Rect, state: &Arc<MarketState>, sna
         Span::styled("Quantity", Style::default().add_modifier(Modifier::UNDERLINED)),
     ]));
 
-    // Use snapshot directly - no locks!
-    let (bids, asks) = snapshot.top_n_depth(5, &state.scaler);
+    let (bids, asks) = snapshot.top_n_depth(5, scaler);
 
     for (price, qty) in asks.iter().rev() {
         lines.push(Line::from(vec![
@@ -278,19 +276,29 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, snapshot: &MarketSnapshot) {
             Span::raw("  No significant trades"),
         ]));
     } else {
-        for trade in significant_trades.iter().rev().take(5) {
-            let (side_text, side_color) = match trade.side() {
+        for sig_trade in significant_trades.iter().rev().take(5) {
+            let (side_text, side_color) = match sig_trade.side() {
                 crate::binance::types::Side::Buy => ("BUY ", Color::Green),
                 crate::binance::types::Side::Sell => ("SELL", Color::Red),
             };
+            
+            let reason_text = sig_trade.significance_reason.display();
             
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" "),
-                Span::styled(format!("{:>10}", trade.price), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:>10}", sig_trade.trade.price), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
                 Span::raw("  │  "),
-                Span::styled(format!("{:>10}", trade.quantity), Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:>10}", sig_trade.trade.quantity), Style::default().add_modifier(Modifier::BOLD)),
+            ]));
+            
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled("↳ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(reason_text, Style::default().fg(Color::Yellow)),
+                Span::raw("  Notional: "),
+                Span::styled(format!("{:.2}", sig_trade.notional_value), Style::default().fg(Color::Cyan)),
             ]));
         }
     }

@@ -2,6 +2,7 @@ use std::{collections::VecDeque};
 use std::sync::Arc;
 use arc_swap::ArcSwap;
 use rust_decimal::Decimal;
+use crate::binance::types::SignificantTrade;
 use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}, engine::metrics::MarketMetrics};
 
 #[derive(Clone)]
@@ -9,7 +10,7 @@ pub struct MarketSnapshot {
     pub book: OrderBook,
     pub metrics: MarketMetrics,
     pub recent_trades: VecDeque<Trade>,
-    pub significant_trades: VecDeque<Trade>,
+    pub significant_trades: VecDeque<SignificantTrade>,
     pub is_syncing: bool
 }
 
