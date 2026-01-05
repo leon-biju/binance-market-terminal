@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 use crate::{book::scaler::Scaler, config::Config, engine::state::MarketSnapshot};
@@ -207,103 +207,105 @@ fn render_orderbook(frame: &mut Frame, area: Rect, scaler: &Scaler, snapshot: &M
 fn render_trade_flow(frame: &mut Frame, area: Rect, snapshot: &MarketSnapshot, config: &Config) {
     let metrics = &snapshot.metrics;
     let recent_trades = &snapshot.recent_trades;
-
-    let available_lines = (area.height.saturating_sub(5)).min(config.recent_trades_display_count as u16) as usize;
-
-    let mut lines = vec![];
-
-    // Last trade section with better formatting
-    lines.push(Line::from(vec![
-        Span::styled("Last Trade", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-    ]));
-
-    let last_trade = recent_trades.iter().last();
-    
-    if let Some(trade) = last_trade {
-        let side = recent_trades.back().map(|t| t.side()).unwrap_or(crate::binance::types::Side::Buy);
-        let (side_text, side_color) = match side {
-            crate::binance::types::Side::Buy => ("BUY ", Color::Green),
-            crate::binance::types::Side::Sell => ("SELL", Color::Red),
-        };
-        
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" "),
-            Span::styled(format!("{}", trade.price), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::raw("  │  "),
-            Span::raw(format!("{}", trade.quantity)),
-        ]));
-    } else {
-        lines.push(Line::from(vec![
-            Span::raw("  No trades yet"),
-        ]));
-    }
-    
-    lines.push(Line::from(""));
-    
-    // Get the most recent trades that fit in available space
-    let trades_to_display = recent_trades.len().min(available_lines);
-    
-    // Display trades from newest to oldest, skipping the most recent one (already shown above)
-    for trade in recent_trades.iter().rev().skip(1).take(trades_to_display) {
-        let (side_text, side_color) = match trade.side() {
-            crate::binance::types::Side::Buy => ("BUY ", Color::Green),
-            crate::binance::types::Side::Sell => ("SELL", Color::Red),
-        };
-        
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(side_text, Style::default().fg(side_color)),
-            Span::raw(" "),
-            Span::styled(format!("{:>10}", trade.price), Style::default().fg(Color::Cyan)),
-            Span::raw("  │  "),
-            Span::raw(format!("{:>10}", trade.quantity)),
-        ]));
-    }
-    
-    // Significant trades section
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("Significant Trades", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-    ]));
-
     let significant_trades = &snapshot.significant_trades;
-    if significant_trades.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("  No significant trades"),
-        ]));
-    } else {
-        for sig_trade in significant_trades.iter().rev().take(config.significant_trades_display_count) {
-            let (side_text, side_color) = match sig_trade.side() {
-                crate::binance::types::Side::Buy => ("BUY ", Color::Green),
+
+    // Calculate available space for tables
+    let recent_trades_count = recent_trades.len().min(config.recent_trades_display_count);
+    let sig_trades_count = if significant_trades.is_empty() { 1 } else { 
+        significant_trades.len().min(config.significant_trades_display_count) + 1 // +1 for header
+    };
+
+    // Split area into sections
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length((recent_trades_count + 2) as u16), // Recent trades table + header
+            Constraint::Length((sig_trades_count + 2) as u16),    // Significant trades table + header
+            Constraint::Length(5),                                 // Metrics section
+            Constraint::Min(0),                                    // Spacer
+        ])
+        .split(Block::default().borders(Borders::ALL).title("Trade Flow").inner(area));
+
+    // Render the outer block
+    frame.render_widget(Block::default().borders(Borders::ALL).title("Trade Flow"), area);
+
+    // Recent Trades Table
+    let recent_header = Row::new(vec![
+        Cell::from("Side").style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from("Price").style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from("Quantity").style(Style::default().add_modifier(Modifier::BOLD)),
+    ]).style(Style::default().add_modifier(Modifier::UNDERLINED));
+
+    let recent_rows: Vec<Row> = recent_trades
+        .iter()
+        .rev()
+        .take(recent_trades_count)
+        .map(|trade| {
+            let (side_text, side_color) = match trade.side() {
+                crate::binance::types::Side::Buy => ("BUY", Color::Green),
                 crate::binance::types::Side::Sell => ("SELL", Color::Red),
             };
-            
-            let reason_text = sig_trade.significance_reason.display();
-            
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
-                Span::raw(" "),
-                Span::styled(format!("{:>10}", sig_trade.trade.price), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::raw("  │  "),
-                Span::styled(format!("{:>10}", sig_trade.trade.quantity), Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw("  │  "),
-                Span::styled(reason_text, Style::default().fg(Color::Yellow)),
-                Span::raw("  │  "),
-                Span::styled(format!("{:.2}", sig_trade.notional_value), Style::default().fg(Color::Cyan)),
-            ]));
-        }
+            Row::new(vec![
+                Cell::from(side_text).style(Style::default().fg(side_color)),
+                Cell::from(format!("{}", trade.price)).style(Style::default().fg(Color::Cyan)),
+                Cell::from(format!("{}", trade.quantity)),
+            ])
+        })
+        .collect();
+
+    let recent_table = Table::new(
+        recent_rows,
+        [Constraint::Length(6), Constraint::Length(14), Constraint::Length(14)],
+    )
+    .header(recent_header)
+    .block(Block::default().title("Recent Trades"));
+
+    frame.render_widget(recent_table, chunks[0]);
+
+    // Significant Trades Table
+    if significant_trades.is_empty() {
+        let empty_msg = Paragraph::new("  No significant trades")
+            .block(Block::default().title("Significant Trades"));
+        frame.render_widget(empty_msg, chunks[1]);
+    } else {
+        let sig_header = Row::new(vec![
+            Cell::from("Side").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from("Price").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from("Quantity").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from("Reason").style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from("Notional").style(Style::default().add_modifier(Modifier::BOLD)),
+        ]).style(Style::default().add_modifier(Modifier::UNDERLINED));
+
+        let sig_rows: Vec<Row> = significant_trades
+            .iter()
+            .rev()
+            .take(config.significant_trades_display_count)
+            .map(|sig_trade| {
+                let (side_text, side_color) = match sig_trade.side() {
+                    crate::binance::types::Side::Buy => ("BUY", Color::Green),
+                    crate::binance::types::Side::Sell => ("SELL", Color::Red),
+                };
+                Row::new(vec![
+                    Cell::from(side_text).style(Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
+                    Cell::from(format!("{}", sig_trade.trade.price)).style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Cell::from(format!("{}", sig_trade.trade.quantity)).style(Style::default().add_modifier(Modifier::BOLD)),
+                    Cell::from(sig_trade.significance_reason.display()).style(Style::default().fg(Color::Yellow)),
+                    Cell::from(format!("{:.2}", sig_trade.notional_value)).style(Style::default().fg(Color::Cyan)),
+                ])
+            })
+            .collect();
+
+        let sig_table = Table::new(
+            sig_rows,
+            [Constraint::Length(6), Constraint::Length(14), Constraint::Length(14), Constraint::Length(12), Constraint::Length(14)],
+        )
+        .header(sig_header)
+        .block(Block::default().title("Significant Trades"));
+
+        frame.render_widget(sig_table, chunks[1]);
     }
 
-    // Add separator and total trades at bottom
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("─".repeat(area.width as usize - 4), Style::default().fg(Color::DarkGray)),
-    ]));
-    
-    // Trade metrics
+    // Trade Metrics Section
     let buy_percent = metrics.buy_ratio_1m.map(|a| (a * 100.0).round() as u32);
     let sell_percent = buy_percent.map(|a| 100 - a);
     
@@ -312,32 +314,39 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, snapshot: &MarketSnapshot, c
     } else {
         format!("{:.4}", metrics.volume_1m)
     };
-    
-    lines.push(Line::from(vec![
-        Span::raw("  Volume (1m): "),
-        Span::styled(volume_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw("  │  VWAP (1m): "),
-        Span::styled(format_opt_decimal(metrics.vwap_1m, 2), Style::default().fg(Color::Yellow)),
-    ]));
-    
-    lines.push(Line::from(vec![
-        Span::raw("  Trades (1m): "),
-        Span::styled(format!("{}", metrics.trade_count_1m), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw("  │  Buy/Sell: "),
-        Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        Span::raw(" │ "),
-        Span::styled(format!("{}%", format_opt_int(sell_percent)), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-    ]));
-    
-    lines.push(Line::from(vec![
-        Span::raw("  Total Trades: "),
-        Span::styled(format!("{}", metrics.total_trades), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-    ]));
-    
-    let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Trade Flow"));
 
-    frame.render_widget(paragraph, area);
+    let metrics_rows = vec![
+        Row::new(vec![
+            Cell::from("Volume (1m)"),
+            Cell::from(volume_str).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Cell::from("VWAP (1m)"),
+            Cell::from(format_opt_decimal(metrics.vwap_1m, 2)).style(Style::default().fg(Color::Yellow)),
+        ]),
+        Row::new(vec![
+            Cell::from("Trades (1m)"),
+            Cell::from(format!("{}", metrics.trade_count_1m)).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Cell::from("Buy / Sell"),
+            Cell::from(Line::from(vec![
+                Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw(" / "),
+                Span::styled(format!("{}%", format_opt_int(sell_percent)), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            ])),
+        ]),
+        Row::new(vec![
+            Cell::from("Total Trades"),
+            Cell::from(format!("{}", metrics.total_trades)).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Cell::from(""),
+            Cell::from(""),
+        ]),
+    ];
+
+    let metrics_table = Table::new(
+        metrics_rows,
+        [Constraint::Length(14), Constraint::Length(14), Constraint::Length(12), Constraint::Length(14)],
+    )
+    .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)));
+
+    frame.render_widget(metrics_table, chunks[2]);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, update_interval_ms: u64) {
