@@ -158,7 +158,10 @@ impl MarketDataEngine {
         let trade_qty = received.trade.quantity.to_f64().unwrap_or(0.0);
         let notional_value = received.trade.price * received.trade.quantity;
 
-        if one_min_volume > 0.0 && trade_qty / one_min_volume >= self.conf.significant_trade_volume_pct {
+        if self.recent_trades.len() >= self.conf.min_trades_for_significance
+            && one_min_volume > 0.0
+            && trade_qty / one_min_volume >= self.conf.significant_trade_volume_pct
+        {
             let volume_pct = (trade_qty / one_min_volume) * 100.0;
             self.significant_trades.push_back(SignificantTrade::new(
                 received.trade.clone(), 
