@@ -163,14 +163,12 @@ impl Trade {
 #[derive(Clone, Debug)]
 pub enum SignificanceReason {
     HighVolumePercent(f64),           // % of 1min volume
-    LargeSpreadCrossing(Decimal),     // % away from mid price
 }
 
 impl SignificanceReason {
     pub fn display(&self) -> String {
         match self {
             SignificanceReason::HighVolumePercent(pct) => format!("Vol: {:.1}%", pct),
-            SignificanceReason::LargeSpreadCrossing(pct) => format!("Spread: {:.2}%", pct),
         }
     }
 }
