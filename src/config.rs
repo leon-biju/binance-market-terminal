@@ -25,13 +25,17 @@ impl Default for Config {
         Self {
             orderbook_initial_snapshot_depth: 1000,
             orderbook_imbalance_depth_levels: 10,
+            
             recent_trades_starting_capacity: 1000,
             significant_trades_retention_secs: 120,
+            
             significant_trade_volume_pct: 0.05,
             min_trades_for_significance: 50,
+            
             max_reconnect_attempts: 10,
             initial_backoff_ms: 100,
             max_backoff_ms: 30000,
+            
             orderbook_depth_display_count: 5,
             recent_trades_display_count: 10,
             significant_trades_display_count: 20,
