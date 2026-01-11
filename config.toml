@@ -1,7 +1,22 @@
-# Default values - feel free to change 
-initial_snapshot_depth = 1000
-initial_starting_capacity = 1000
+# Orderbook Configuration
+
+# Orderbook Parameters
+orderbook_initial_snapshot_depth = 1000
+orderbook_imbalance_depth_levels = 10
+
+# Trade Tracking Parameters
+recent_trades_starting_capacity = 1000
+significant_trades_retention_secs = 120
+# Percentage of total 1-minute volume that a single trade takes up to be considered significant
+significant_trade_volume_pct = 0.05
+min_trades_for_significance = 50
+
+# Reconnection Parameters
 max_reconnect_attempts = 10
 initial_backoff_ms = 100
 max_backoff_ms = 30000
-imbalance_depth_levels = 10
+
+# Display Parameters
+orderbook_depth_display_count = 10
+recent_trades_display_count = 10
+significant_trades_display_count = 20

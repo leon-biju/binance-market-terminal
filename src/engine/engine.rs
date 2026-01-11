@@ -4,8 +4,9 @@ use std::time::{self, Duration};
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
+use num_traits::ToPrimitive;
 
-use crate::binance::types::{DepthSnapshot, Trade, ReceivedTrade, ReceivedDepthUpdate};
+use crate::binance::types::{DepthSnapshot, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
 use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
@@ -24,6 +25,7 @@ pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
     metrics: MarketMetrics,
     recent_trades: VecDeque<Trade>,
+    significant_trades: VecDeque<SignificantTrade>,
 
     conf: Arc<config::Config>,
     
@@ -49,7 +51,7 @@ impl MarketDataEngine {
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
-        conf: config::Config
+        conf: Arc<config::Config>
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
@@ -57,12 +59,13 @@ impl MarketDataEngine {
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
         let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
-        let conf = Arc::new(conf);
+        let conf = conf;
         
         let engine = MarketDataEngine {
             state: state.clone(),
-            metrics: MarketMetrics::new(conf.imbalance_depth_levels),
-            recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
+            metrics: MarketMetrics::new(conf.orderbook_imbalance_depth_levels),
+            recent_trades: VecDeque::with_capacity(conf.recent_trades_starting_capacity),
+            significant_trades: VecDeque::with_capacity(conf.significant_trades_display_count),
 
             conf,
 
@@ -90,6 +93,7 @@ impl MarketDataEngine {
             book: self.book.clone(),
             metrics: self.metrics.clone(),
             recent_trades: self.recent_trades.clone(),
+            significant_trades: self.significant_trades.clone(),
             is_syncing: self.is_syncing,
         };
 
@@ -102,7 +106,7 @@ impl MarketDataEngine {
         let conf = self.conf.clone();
         
         tokio::spawn(async move {
-            match snapshot::fetch_snapshot(&symbol, conf.initial_snapshot_depth).await {
+            match snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await {
                 Ok(snapshot) => {
                     if tx.send(EngineCommand::NewSnapshot(snapshot)).await.is_err() {
                         tracing::error!("Failed to send snapshot to engine - channel closed")
@@ -127,6 +131,46 @@ impl MarketDataEngine {
         }
     }
 
+    fn detect_significant_trade(&mut self, trade: &Trade, event_time: u64) {
+        let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
+        let notional_value = trade.price * trade.quantity;
+        let mut reason: Option<SignificanceReason> = None;
+
+        // Check high volume percentage (requires baseline trades)
+        if reason.is_none()
+            && self.recent_trades.len() >= self.conf.min_trades_for_significance
+        {
+            let one_min_volume: f64 = self.recent_trades.iter()
+                .map(|t| t.quantity.to_f64().unwrap_or(0.0))
+                .sum();
+
+            if one_min_volume > 0.0 {
+                let volume_ratio = trade_qty / one_min_volume;
+                if volume_ratio >= self.conf.significant_trade_volume_pct {
+                    reason = Some(SignificanceReason::HighVolumePercent(volume_ratio * 100.0));
+                }
+            }
+        }
+
+        if let Some(significance_reason) = reason {
+            self.significant_trades.push_back(SignificantTrade::new(
+                trade.clone(),
+                notional_value,
+                significance_reason,
+            ));
+
+            // Prune old significant trades
+            let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
+            while let Some(oldest) = self.significant_trades.front() {
+                if oldest.trade.trade_time < cutoff {
+                    self.significant_trades.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     fn handle_ws_trade(&mut self, received: ReceivedTrade) {
         self.total_trades += 1;
         self.update_rate_counter();
@@ -135,7 +179,7 @@ impl MarketDataEngine {
         let received_at = received.received_at;
         let cutoff_time = event_time.saturating_sub(60_000);
         
-        self.recent_trades.push_back(received.trade);
+        self.recent_trades.push_back(received.trade.clone());
         
         while let Some(oldest) = self.recent_trades.front() {
             if oldest.trade_time < cutoff_time {
@@ -144,7 +188,10 @@ impl MarketDataEngine {
                 break;
             }
         }
-        
+
+        self.detect_significant_trade(&received.trade, event_time);
+
+
         //update metrics in place
         self.metrics.compute_trade_metrics(
             &self.recent_trades,
@@ -281,7 +328,7 @@ impl MarketDataEngine {
 
         loop {
             tokio::select! {
-                biased;
+                //biased;
                 
                 Some(cmd) = self.command_rx.recv() => {
                     let should_shutdown = self.handle_command(cmd).await?;
@@ -305,7 +352,7 @@ impl MarketDataEngine {
                         }
                     }
                 }
-                
+
                 Some(result) = depth_stream.next() => {
                     match result {
                         Ok(update) => self.handle_ws_depth_update(update).await?,
