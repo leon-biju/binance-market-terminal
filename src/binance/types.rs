@@ -159,3 +159,37 @@ impl Trade {
         }
     }
 }
+
+#[derive(Clone, Debug)]
+pub enum SignificanceReason {
+    HighVolumePercent(f64),           // % of 1min volume
+}
+
+impl SignificanceReason {
+    pub fn display(&self) -> String {
+        match self {
+            SignificanceReason::HighVolumePercent(pct) => format!("Vol: {:.1}%", pct),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SignificantTrade {
+    pub trade: Trade,
+    pub notional_value: Decimal,
+    pub significance_reason: SignificanceReason,
+}
+
+impl SignificantTrade {
+    pub fn new(trade: Trade, notional_value: Decimal, reason: SignificanceReason) -> Self {
+        Self {
+            trade,
+            notional_value,
+            significance_reason: reason,
+        }
+    }
+    
+    pub fn side(&self) -> Side {
+        self.trade.side()
+    }
+}
