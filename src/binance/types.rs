@@ -160,6 +160,20 @@ impl Trade {
     }
 }
 
+
+// combined stream messages from Binance
+#[derive(Debug, Deserialize)]
+pub struct CombinedStreamMessage {
+    pub stream: String,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug)]
+pub enum MarketEvent {
+    Depth(ReceivedDepthUpdate),
+    Trade(ReceivedTrade),
+}
+
 #[derive(Clone, Debug)]
 pub enum SignificanceReason {
     HighVolumePercent(f64),           // % of 1min volume

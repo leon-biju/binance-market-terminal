@@ -6,7 +6,7 @@ use anyhow::Result;
 use futures_util::StreamExt;
 use num_traits::ToPrimitive;
 
-use crate::binance::types::{DepthSnapshot, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
+use crate::binance::types::{DepthSnapshot, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
 use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
@@ -316,14 +316,9 @@ impl MarketDataEngine {
         
         tracing::info!("Engine running for symbol: {}", self.symbol);
 
-        let mut depth_stream = Box::pin(self.connect_with_retry(
-            || stream::connect_depth_stream(&symbol),
-            "Depth stream",
-        ).await?);
-
-        let mut trade_stream = Box::pin(self.connect_with_retry(
-            || stream::connect_trade_stream(&symbol),
-            "Trade stream",
+        let mut market_stream = Box::pin(self.connect_with_retry(
+            || stream::connect_market_stream(&symbol),
+            "Market stream",
         ).await?);
 
         loop {
@@ -337,27 +332,16 @@ impl MarketDataEngine {
                     }
                 }
 
-                Some(result) = trade_stream.next() => {
+                Some(result) = market_stream.next() => {
                     match result {
-                        Ok(trade) => self.handle_ws_trade(trade),
-                        Err(e) => {
-                            tracing::error!("Trade websocket stream error: {}", e);
-                            self.is_syncing = true;
-                            self.publish_snapshot();
-                            
-                            trade_stream = Box::pin(self.connect_with_retry(
-                                || stream::connect_trade_stream(&symbol),
-                                "Trade stream",
-                            ).await?);
+                        Ok(event) => {
+                            match event {
+                                MarketEvent::Trade(trade) => self.handle_ws_trade(trade),
+                                MarketEvent::Depth(update) => self.handle_ws_depth_update(update).await?,
+                            }
                         }
-                    }
-                }
-
-                Some(result) = depth_stream.next() => {
-                    match result {
-                        Ok(update) => self.handle_ws_depth_update(update).await?,
                         Err(e) => {
-                            tracing::error!("Depth websocket stream error: {}", e);
+                            tracing::error!("Market websocket stream error: {}", e);
                             self.is_syncing = true;
                             self.publish_snapshot();
                             
@@ -365,9 +349,9 @@ impl MarketDataEngine {
                             self.sync_state = SyncState::new();
                             self.spawn_snapshot_fetch();
                             
-                            depth_stream = Box::pin(self.connect_with_retry(
-                                || stream::connect_depth_stream(&symbol),
-                                "Depth stream",
+                            market_stream = Box::pin(self.connect_with_retry(
+                                || stream::connect_market_stream(&symbol),
+                                "Market stream",
                             ).await?);
                         }
                     }
