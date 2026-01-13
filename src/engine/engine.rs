@@ -55,11 +55,10 @@ impl MarketDataEngine {
     ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
         let (command_tx, command_rx) = mpsc::channel(32);
         
-        let mut sync_state = SyncState::new();
+        let mut sync_state = SyncState::default();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
         let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
-        let conf = conf;
         
         let engine = MarketDataEngine {
             state: state.clone(),
@@ -216,7 +215,7 @@ impl MarketDataEngine {
             }
             SyncOutcome::GapBetweenUpdates => {
                 self.command_tx.send(EngineCommand::RequestSnapshot).await?;
-                self.sync_state = SyncState::new();
+                self.sync_state = SyncState::default();
                 self.is_syncing = true;
             }
             SyncOutcome::NoUpdates => {}
@@ -347,7 +346,7 @@ impl MarketDataEngine {
                             self.publish_snapshot();
                             
                             // reset sync state - we need a fresh snapshot after reconnect
-                            self.sync_state = SyncState::new();
+                            self.sync_state = SyncState::default();
                             self.spawn_snapshot_fetch();
                             
                             market_stream = Box::pin(self.connect_with_retry(
@@ -363,7 +362,7 @@ impl MarketDataEngine {
                     self.is_syncing = true;
                     self.publish_snapshot();
 
-                    self.sync_state = SyncState::new();
+                    self.sync_state = SyncState::default();
                     self.spawn_snapshot_fetch();
 
                     market_stream = Box::pin(self.connect_with_retry(

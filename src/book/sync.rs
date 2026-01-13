@@ -1,5 +1,6 @@
 use crate::binance::types::DepthUpdate;
 
+#[derive(Default)]
 pub struct SyncState {
     last_update_id: Option<u64>,
     buffer: Vec<DepthUpdate>,
@@ -14,13 +15,6 @@ pub enum SyncOutcome {
 }
 
 impl SyncState {
-    pub fn new() -> Self {
-        Self {
-            last_update_id: None,
-            buffer: Vec::new(),
-        }
-    }
-
     pub fn set_last_update_id(&mut self, last_update_id: u64) {
         self.last_update_id = Some(last_update_id);
     }
@@ -92,7 +86,7 @@ mod tests {
 
     #[test]
     fn buffers_when_last_id_unknown() {
-        let mut state = SyncState::new();
+        let mut state = SyncState::default();
 
         let res = state.process_delta(mk_update(5, 7, 1));
 
@@ -103,7 +97,7 @@ mod tests {
 
     #[test]
     fn discards_fully_old_updates() {
-        let mut state = SyncState::new();
+        let mut state = SyncState::default();
         state.set_last_update_id(10);
 
         let res = state.process_delta(mk_update(5, 9, 1));
@@ -115,7 +109,7 @@ mod tests {
 
     #[test]
     fn applies_buffered_then_current_in_order() {
-        let mut state = SyncState::new();
+        let mut state = SyncState::default();
 
         state.process_delta(mk_update(9, 10, 2)); // buffered while unknown last id
         state.process_delta(mk_update(6, 8, 1));
@@ -137,7 +131,7 @@ mod tests {
 
     #[test]
     fn skips_stale_buffered_chunks() {
-        let mut state = SyncState::new();
+        let mut state = SyncState::default();
 
         state.process_delta(mk_update(7, 9, 1));
         state.set_last_update_id(10);
@@ -155,7 +149,7 @@ mod tests {
 
     #[test]
     fn errors_on_gap_between_updates() {
-        let mut state = SyncState::new();
+        let mut state = SyncState::default();
         state.set_last_update_id(10);
 
         let outcome = state.process_delta(mk_update(12, 13, 1));

@@ -4,29 +4,16 @@ use num_traits::ToPrimitive;
 
 #[derive(Debug, Clone)]
 pub struct Scaler {
-    price_scale: u64,
-    qty_scale: u64,
     tick_size: Decimal,
     step_size: Decimal,
 }
 
 impl Scaler {
     pub fn new(tick_size: Decimal, step_size: Decimal) -> Self {
-        let price_scale = Self::decimal_to_scale(&tick_size);
-        let qty_scale = Self::decimal_to_scale(&step_size);
-
         Self {
-            price_scale,
-            qty_scale,
             tick_size,
             step_size,
         }
-    }
-
-    fn decimal_to_scale(d: &Decimal) -> u64 {
-        let normalized = d.normalize(); // remove trailing zeros
-        let places = normalized.scale(); // digits after decimal point
-        10u64.pow(places as u32)
     }
 
     pub fn price_to_ticks(&self, price: &str) -> Option<u64> {
@@ -73,14 +60,6 @@ impl Scaler {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn computes_scales_from_tick_and_step() {
-        let scaler = Scaler::new(Decimal::from_str("0.0001000").unwrap(), Decimal::from_str("0.0500").unwrap());
-
-        assert_eq!(scaler.price_scale, 10_000); // 4 decimal places after normalizing 0.0001000
-        assert_eq!(scaler.qty_scale, 100);      // 2 decimal places after normalizing 0.0500
-    }
 
     #[test]
     fn converts_price_and_qty_round_trip() {

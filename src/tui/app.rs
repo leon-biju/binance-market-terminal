@@ -74,31 +74,30 @@ impl App {
     async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
             if !self.frozen {
-                terminal.draw(|f| super::ui::render(f, &self))?;
+                terminal.draw(|f| super::ui::render(f, self))?;
             }
 
             // Poll for events with timeout
-            if event::poll(std::time::Duration::from_millis(self.update_interval_ms))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                                self.should_quit = true;
-                            }
-                            KeyCode::Char('f') | KeyCode::Char('F') => {
-                                self.frozen = !self.frozen;
-                                terminal.draw(|f| super::ui::render(f, &self))?;
-                            }
-                            KeyCode::Up => {
-                                self.update_interval_ms = (self.update_interval_ms + 100).min(2000);
-                            }
-                            KeyCode::Down => {
-                                self.update_interval_ms = (self.update_interval_ms - 100).max(100);
-                            }
-                            _ => {}
+            if event::poll(std::time::Duration::from_millis(self.update_interval_ms))?
+                && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                            self.should_quit = true;
                         }
+                        KeyCode::Char('f') | KeyCode::Char('F') => {
+                            self.frozen = !self.frozen;
+                            terminal.draw(|f| super::ui::render(f, self))?;
+                        }
+                        KeyCode::Up => {
+                            self.update_interval_ms = (self.update_interval_ms + 100).min(2000);
+                        }
+                        KeyCode::Down => {
+                            self.update_interval_ms = (self.update_interval_ms - 100).max(100);
+                        }
+                        _ => {}
                     }
-                }
+    
             }
 
             if self.should_quit {

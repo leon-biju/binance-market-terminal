@@ -48,7 +48,7 @@ pub struct MarketMetrics {
 impl MarketMetrics {
     pub fn new(imbalance_depth_levels: usize) -> Self {
         Self{
-            imbalance_depth_levels: imbalance_depth_levels,
+            imbalance_depth_levels,
             ..Default::default()
         }
     } 
@@ -67,7 +67,7 @@ impl MarketMetrics {
             .map(|price| scaler.ticks_to_price(price));
 
         // magic 10 value here todo: replace this
-        self.imbalance_ratio = book.imbalance_ratio(self.imbalance_depth_levels).map(Decimal::from_f64_retain).flatten();
+        self.imbalance_ratio = book.imbalance_ratio(self.imbalance_depth_levels).and_then(Decimal::from_f64_retain);
         
         let (total_lag, network_lag) = compute_latencies(event_time, received_at);
         self.orderbook_lag_ms = Some(total_lag);
