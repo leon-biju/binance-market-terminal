@@ -13,7 +13,7 @@ use tracing_appender::rolling;
 
 use crate::binance::snapshot;
 use crate::book::scaler;
-use crate::engine::engine::{EngineCommand, MarketDataEngine};
+use crate::engine::runtime::{EngineCommand, MarketDataEngine};
 use crate::tui::App;
 
 fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
