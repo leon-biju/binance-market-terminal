@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, conf.clone());
+    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, conf.clone())?;
     
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {

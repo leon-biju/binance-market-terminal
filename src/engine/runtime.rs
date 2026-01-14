@@ -52,12 +52,12 @@ impl MarketDataEngine {
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
         conf: Arc<config::Config>
-    ) -> (Self, mpsc::Sender<EngineCommand>, Arc<MarketState>) {
+    ) -> Result<(Self, mpsc::Sender<EngineCommand>, Arc<MarketState>)> {
         let (command_tx, command_rx) = mpsc::channel(32);
         
         let mut sync_state = SyncState::default();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
-        let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler);
+        let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler)?;
         let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
         
         let engine = MarketDataEngine {
@@ -84,7 +84,7 @@ impl MarketDataEngine {
             total_trades: 0,
         };
         
-        (engine, command_tx, state) 
+        Ok((engine, command_tx, state))
     }
 
     fn publish_snapshot(&self) {
@@ -239,7 +239,7 @@ impl MarketDataEngine {
                 tracing::info!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
 
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
-                self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
+                self.book = OrderBook::from_snapshot(snapshot, &self.scaler)?;
                 self.publish_snapshot();
 
                 self.is_syncing = false;

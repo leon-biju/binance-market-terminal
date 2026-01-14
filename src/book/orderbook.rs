@@ -16,25 +16,27 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    pub fn from_snapshot(snapshot: DepthSnapshot, scaler: &scaler::Scaler) -> Self {
-        let mut book = Self {
-            bids: BTreeMap::new(),
-            asks: BTreeMap::new(),
-        };
+    pub fn from_snapshot(snapshot: DepthSnapshot, scaler: &scaler::Scaler) -> Result<Self> {
+        let mut bids = BTreeMap::new();
+        let mut asks = BTreeMap::new();
         
         for [price, qty] in snapshot.bids {
-            let pt = scaler.price_to_ticks(&price).unwrap();
-            let qt = scaler.qty_to_ticks(&qty).unwrap();
-            book.bids.insert(pt, qt);
+            let pt = scaler.price_to_ticks(&price).ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
+            let qt = scaler.qty_to_ticks(&qty).ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &price))?;
+            bids.insert(pt, qt);
         }
         
         for [price, qty] in snapshot.asks {
-            let pt = scaler.price_to_ticks(&price).unwrap();
-            let qt = scaler.qty_to_ticks(&qty).unwrap();
-            book.asks.insert(pt, qt);
+            let pt = scaler.price_to_ticks(&price).ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
+            let qt = scaler.qty_to_ticks(&qty).ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &price))?;
+            asks.insert(pt, qt);
         }
         
-        book
+
+        Ok(Self {
+            bids,
+            asks
+        })
     }
     
     pub fn apply_update(&mut self, update: &DepthUpdate, scaler: &scaler::Scaler) -> Result<()> {
