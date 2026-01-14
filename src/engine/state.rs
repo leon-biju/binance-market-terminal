@@ -14,15 +14,17 @@ pub struct MarketSnapshot {
     pub is_syncing: bool
 }
 
+pub type DisplayDepthLevel = (Decimal, Decimal);
+
 impl MarketSnapshot {
-    pub fn top_n_depth(&self, n: usize, scaler: &Scaler) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
+    pub fn top_n_depth(&self, n: usize, scaler: &Scaler) -> (Vec<DisplayDepthLevel>, Vec<DisplayDepthLevel>) {
         let (bids, asks) = self. book.top_n_depth(n);
 
-        let bids_decimal = bids.iter()
+        let bids_decimal: Vec<DisplayDepthLevel> = bids.iter()
             .map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty)))
             .collect();
 
-        let asks_decimal = asks.iter()
+        let asks_decimal: Vec<DisplayDepthLevel> = asks.iter()
             .map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty)))
             .collect();
 

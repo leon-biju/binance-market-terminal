@@ -6,6 +6,7 @@ use anyhow::Result;
 use crate::{binance::{types::{DepthSnapshot, DepthUpdate}}};
 use crate::book::scaler;
 
+pub type RawDepthLevel = (u64, u64);
 
 
 #[derive(Debug, Clone)]
@@ -82,15 +83,15 @@ impl OrderBook {
         }
     }
 
-    pub fn top_n_depth(&self, n: usize) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
-        let best_n_bids: Vec<(u64, u64)> = self.bids
+    pub fn top_n_depth(&self, n: usize) -> (Vec<RawDepthLevel>, Vec<RawDepthLevel>) {
+        let best_n_bids: Vec<RawDepthLevel> = self.bids
             .iter()
             .rev()
             .take(n)
             .map(|(price, qty)| (*price, *qty))
             .collect();
 
-        let best_n_asks: Vec<(u64, u64)> = self.asks
+        let best_n_asks: Vec<RawDepthLevel> = self.asks
             .iter()
             .take(n)
             .map(|(price, qty)| (*price, *qty))
