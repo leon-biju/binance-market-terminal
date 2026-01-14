@@ -45,7 +45,7 @@ fn bench_apply_updates(c: &mut Criterion) {
         &format!("apply_updates_{}x{}", UPDATES_PER_BATCH, LEVELS_PER_UPDATE),
         |b| {
             b.iter_batched_ref(
-                || OrderBook::from_snapshot(snapshot.clone(), &scaler),
+                || OrderBook::from_snapshot(snapshot.clone(), &scaler).unwrap(),
                 |book| {
                     for up in &updates {
                         let _ = book.apply_update(black_box(up), &scaler);
@@ -63,7 +63,7 @@ fn bench_query_functions(c: &mut Criterion) {
         Decimal::from_str("0.01").unwrap(),
         Decimal::from_str("0.01").unwrap(),
     );
-    let book = OrderBook::from_snapshot(snapshot, &scaler);
+    let book = OrderBook::from_snapshot(snapshot, &scaler).unwrap();
 
     c.bench_function("query_best_spread_mid", |b| {
         b.iter(|| {
@@ -89,7 +89,7 @@ fn bench_high_churn(c: &mut Criterion) {
 
     c.bench_function("apply_updates_high_churn_1000x10", |b| {
         b.iter_batched_ref(
-            || OrderBook::from_snapshot(snapshot.clone(), &scaler),
+            || OrderBook::from_snapshot(snapshot.clone(), &scaler).unwrap(),
             |book| {
                 for up in &updates {
                     let _ = book.apply_update(black_box(up), &scaler);
