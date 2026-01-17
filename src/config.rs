@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
-use anyhow::Result;
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(default)]
 pub struct Config {
     pub orderbook_initial_snapshot_depth: u16,
     pub orderbook_imbalance_depth_levels: usize,
@@ -46,29 +46,17 @@ impl Default for Config {
     }
 }
 
-pub fn load_config() -> Result<Config> {
-    match load_existing_config() {
-        Ok(conf) => {
-            tracing::info!("Loaded config.toml");
-            Ok(conf)
+pub fn load_config() -> Config {
+    match fs::read_to_string("config.toml") {
+        Ok(content) => {
+            toml::from_str(&content).unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse config.toml: {e}, using defaults");
+                Config::default()
+            })
         }
         Err(_) => {
-            tracing::info!("Config file not found, creating config.toml with default settings");
-            create_default_config()
+            tracing::info!("No config.toml found, using defaults");
+            Config::default()
         }
-        
     }
-}
-
-fn load_existing_config() -> Result<Config> {
-    let content = fs::read_to_string("config.toml")?;
-    Ok(toml::from_str(&content)?)
-}
-
-fn create_default_config() -> Result<Config> {
-
-    let config = Config::default();
-    let toml_string = toml::to_string_pretty(&config)?;
-    fs::write("config.toml", toml_string)?;
-    Ok(config)
 }

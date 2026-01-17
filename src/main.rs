@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     info!("");
     info!("[PROGRAM START]");
 
-    let conf = Arc::new(config::load_config()?);
+    let conf = Arc::new(config::load_config());
     info!("{:?}", conf);
 
     let snapshot = snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await?;
