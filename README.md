@@ -4,11 +4,16 @@
 
 **A high-performance, real-time L2 orderbook and trade stream ingestor built in Rust**
 
+Disclaimer
+This project is not affiliated with or endorsed by Binance.
+It is intended for educational and research purposes only.
+
 [![Rust](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<!-- TODO: Add screenshot of TUI here -->
-<!-- ![TUI Screenshot](docs/assets/tui-screenshot.png) -->
+<!-- Screenshot of TUI here -->
+<img width="2524" height="1381" alt="screenshot-2026-01-17_18-29-29" src="https://github.com/user-attachments/assets/5621a234-4ff5-473e-aa09-12c03c328ea1" />
+
 
 </div>
 
@@ -101,9 +106,10 @@ The TUI will launch displaying:
 | Key | Action |
 |-----|--------|
 | `q` / `Esc` | Quit application |
+| `f` | Freeze/Pause the interface* |
 | `↑` / `↓` | Increase/decrease time between tui frame updates |
 
-<!-- TODO: Add more keybindings if they exist -->
+* Only the interface is paused, the engine thread is still running
 
 ---
 
