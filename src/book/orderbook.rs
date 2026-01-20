@@ -45,10 +45,10 @@ impl OrderBook {
     pub fn apply_update(&mut self, update: &DepthUpdate, scaler: &scaler::Scaler) -> Result<()> {
         for [price, qty] in &update.b {
             let pt = scaler
-                .price_to_ticks(&price)
+                .price_to_ticks(price)
                 .ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
             let qt = scaler
-                .qty_to_ticks(&qty)
+                .qty_to_ticks(qty)
                 .ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &qty))?;
             if qt.is_zero() {
                 self.bids.remove(&pt);
@@ -59,10 +59,10 @@ impl OrderBook {
 
         for [price, qty] in &update.a {
             let pt = scaler
-                .price_to_ticks(&price)
+                .price_to_ticks(price)
                 .ok_or_else(|| anyhow::anyhow!("Failed to convert price ({}) to ticks", &price))?;
             let qt = scaler
-                .qty_to_ticks(&qty)
+                .qty_to_ticks(qty)
                 .ok_or_else(|| anyhow::anyhow!("Failed to convert qty ({}) to ticks", &qty))?;
             if qt.is_zero() {
                 self.asks.remove(&pt);
