@@ -6,7 +6,7 @@
     "configurations": [
 
         {
-            "name": "Debug unit tests in library 'orderbook_engine'",
+            "name": "Debug unit tests in library 'binance-market-terminal'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
@@ -16,13 +16,13 @@
             }
         },
         {
-            "name": "Debug executable 'orderbook-engine'",
+            "name": "Debug executable 'binance-market-terminal'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
                 "args": [
                     "run",
-                    "--bin=orderbook-engine"
+                    "--bin=binance-market-terminal"
                 ]
             },
             "args": ["BTCUSDT"],
@@ -30,13 +30,13 @@
 
         },
         {
-            "name": "Debug unit tests in executable 'orderbook-engine'",
+            "name": "Debug unit tests in executable 'binance-market-terminal'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
                 "args": [
                     "test",
-                    "--bin=orderbook-engine"
+                    "--bin=binance-market-terminal"
                 ]
             },
             "console": "externalTerminal"
