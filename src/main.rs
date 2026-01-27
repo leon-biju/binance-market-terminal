@@ -17,7 +17,7 @@ use crate::engine::runtime::{EngineCommand, MarketDataEngine};
 use crate::tui::App;
 
 fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
-    let file_appender = rolling::daily("logs", "ingestor.log");
+    let file_appender = rolling::daily("logs", "binance-market-terminal.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let filter = EnvFilter::from_default_env().add_directive("info".parse().unwrap());

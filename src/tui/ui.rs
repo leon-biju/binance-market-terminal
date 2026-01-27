@@ -124,7 +124,7 @@ fn render_header(
     let left_header = Paragraph::new(left_header_text).block(
         Block::default()
             .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
-            .title("Market Data Engine"),
+            .title("Binance Market Terminal"),
     );
 
     let right_header = Paragraph::new(right_header_text)
