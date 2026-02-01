@@ -257,9 +257,9 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Acknowledgments
 
-- [Binance API](https://binance-docs.github.io/apidocs/) for market data
-- [Ratatui](https://github.com/ratatui-org/ratatui) for the terminal UI framework
-- [Criterion](https://github.com/bheisler/criterion.rs) for benchmarking
+- [Binance API](https://developers.binance.com/docs/binance-spot-api-docs) for market data
+- [Ratatui](https://ratatui.rs/) for the terminal UI framework
+- [Criterion](https://github.com/criterion-rs/criterion.rs) for benchmarking
 
 ---
 
