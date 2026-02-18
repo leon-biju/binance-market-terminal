@@ -47,6 +47,7 @@ pub struct MarketDataEngine {
 
     update_counter: u64,
     last_rate_calc_time: std::time::Instant,
+    last_publish_time: std::time::Instant,
     updates_per_second: f64,
     total_trades: u64,
 }
@@ -93,6 +94,7 @@ impl MarketDataEngine {
 
             update_counter: 0,
             last_rate_calc_time: std::time::Instant::now(),
+            last_publish_time: std::time::Instant::now(),
             updates_per_second: 0.0,
             total_trades: 0,
         };
@@ -101,7 +103,15 @@ impl MarketDataEngine {
     }
 
     #[tracing::instrument(level = "trace", skip_all, name = "engine::publish_snapshot")]
-    fn publish_snapshot(&self) {
+    fn publish_snapshot(&mut self, force: bool) {
+        // TODO: make time configurable
+        // throttle snapshot updates to at most once every 100ms, unless it's a forced update (e.g. after applying a significant trade or receiving a new snapshot)
+        let now = std::time::Instant::now();
+        if !force && now.duration_since(self.last_publish_time).as_millis() < 100 {
+            return;
+        }
+
+
         let (top_n_bids, top_n_asks) = self.book.top_n_depth(self.conf.orderbook_depth_display_count);
         let snapshot = MarketSnapshot {
             top_n_bids,
@@ -113,6 +123,8 @@ impl MarketDataEngine {
         };
 
         self.state.snapshot.store(Arc::new(snapshot));
+
+        self.last_publish_time = std::time::Instant::now();
     }
 
     fn spawn_snapshot_fetch(&self) {
@@ -218,7 +230,7 @@ impl MarketDataEngine {
         self.metrics
             .update_performance_metrics(self.updates_per_second);
 
-        self.publish_snapshot();
+        self.publish_snapshot(false);
     }
 
     #[tracing::instrument(level = "trace", skip_all, name = "engine::handle_ws_depth_update")]
@@ -245,7 +257,7 @@ impl MarketDataEngine {
         self.metrics
             .compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
 
-        self.publish_snapshot();
+        self.publish_snapshot(false);
 
         Ok(())
     }
@@ -260,7 +272,7 @@ impl MarketDataEngine {
 
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler)?;
-                self.publish_snapshot();
+                self.publish_snapshot(true);
 
                 self.is_syncing = false;
                 Ok(false)
@@ -359,7 +371,7 @@ impl MarketDataEngine {
                         Err(e) => {
                             tracing::error!("Market websocket stream error: {}", e);
                             self.is_syncing = true;
-                            self.publish_snapshot();
+                            self.publish_snapshot(true);
 
                             // reset sync state - we need a fresh snapshot after reconnect
                             self.sync_state = SyncState::default();
@@ -376,7 +388,7 @@ impl MarketDataEngine {
                 _ = tokio::time::sleep_until(last_message_time + stream_timeout) => {
                     tracing::warn!("No message received for {:?}, attempting reconnect...", stream_timeout);
                     self.is_syncing = true;
-                    self.publish_snapshot();
+                    self.publish_snapshot(true);
 
                     self.sync_state = SyncState::default();
                     self.spawn_snapshot_fetch();
