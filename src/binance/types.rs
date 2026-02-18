@@ -174,7 +174,7 @@ pub enum MarketEvent {
 
 #[derive(Clone, Debug)]
 pub enum SignificanceReason {
-    HighVolumePercent(f64), // % of 1min volume
+    HighVolumePercent(Decimal), // % of 1-min rolling volume
 }
 
 impl SignificanceReason {

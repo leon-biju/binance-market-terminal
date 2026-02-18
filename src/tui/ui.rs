@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
+#[tracing::instrument(level = "trace", skip_all, name = "tui::render")]
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let snapshot = app_data.state.load();
 
@@ -152,7 +153,6 @@ fn render_main(
         chunks[0],
         scaler,
         snapshot,
-        config.orderbook_depth_display_count,
     );
     render_trade_flow(frame, chunks[1], snapshot, config);
 }
@@ -162,7 +162,6 @@ fn render_orderbook(
     area: Rect,
     scaler: &Scaler,
     snapshot: &MarketSnapshot,
-    orderbook_depth_display_count: usize,
 ) {
     let mut lines = vec![];
 
@@ -180,7 +179,7 @@ fn render_orderbook(
         ),
     ]));
 
-    let (bids, asks) = snapshot.top_n_depth(orderbook_depth_display_count, scaler);
+    let (bids, asks) = snapshot.top_n_depth(scaler);
 
     for (price, qty) in asks.iter().rev() {
         lines.push(Line::from(vec![

@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -9,7 +10,7 @@ pub struct Config {
 
     pub recent_trades_starting_capacity: usize,
     pub significant_trades_retention_secs: u64,
-    pub significant_trade_volume_pct: f64,
+    pub significant_trade_volume_pct: Decimal,
     pub min_trades_for_significance: usize,
 
     pub max_reconnect_attempts: u32,
@@ -31,7 +32,7 @@ impl Default for Config {
             recent_trades_starting_capacity: 1000,
             significant_trades_retention_secs: 120,
 
-            significant_trade_volume_pct: 0.05,
+            significant_trade_volume_pct: Decimal::new(5, 2), // 0.05
             min_trades_for_significance: 50,
 
             max_reconnect_attempts: 10,

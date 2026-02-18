@@ -1,11 +1,15 @@
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion};
 use binance_market_terminal::{
     binance::types::{DepthSnapshot, DepthUpdate},
     book::orderbook::OrderBook,
     book::scaler::Scaler,
 };
+use pprof::ProfilerGuardBuilder;
+use pprof::protos::Message;
 use rust_decimal::Decimal;
+use std::fs::{self, File};
 use std::hint::black_box;
+use std::io::Write;
 use std::str::FromStr;
 
 const SNAPSHOT_LEVELS: usize = 10000;
@@ -100,11 +104,36 @@ fn bench_high_churn(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_from_snapshot,
-    bench_apply_updates,
-    bench_query_functions,
-    bench_high_churn
-);
-criterion_main!(benches);
+fn main() {
+    let out_dir = "target/flamegraphs";
+    fs::create_dir_all(out_dir).unwrap();
+
+    let guard = ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
+    let mut criterion = Criterion::default();
+
+    bench_from_snapshot(&mut criterion);
+    bench_apply_updates(&mut criterion);
+    bench_query_functions(&mut criterion);
+    bench_high_churn(&mut criterion);
+
+    criterion.final_summary();
+
+    if let Ok(report) = guard.report().build() {
+        let mut file = File::create(format!("{}/orderbook_bench.svg", out_dir)).unwrap();
+        report.flamegraph(&mut file).unwrap();
+        println!("\nFlamegraph written to {}/orderbook_bench.svg", out_dir);
+
+        let pprof_profile = report.pprof().unwrap();
+        let mut buf = Vec::new();
+        pprof_profile.encode(&mut buf).unwrap();
+        let mut proto_file =
+            File::create(format!("{}/orderbook_bench.pb", out_dir)).unwrap();
+        proto_file.write_all(&buf).unwrap();
+        println!("Protobuf profile written to {}/orderbook_bench.pb", out_dir);
+    }
+}

@@ -25,6 +25,9 @@ tracing-subscriber = { version = "0.3.22", features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
 criterion = "0.8.1"
+pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
+tracing-chrome = "0.7"
+
 
 [[bench]]
 name = "orderbook_bench"
@@ -32,3 +35,10 @@ harness = false
 
 [profile.dev]
 panic = "abort"
+
+[profile.release]
+debug = true
+
+
+[profile.bench]
+debug = true
