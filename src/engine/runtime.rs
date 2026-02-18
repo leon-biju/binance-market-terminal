@@ -1,10 +1,11 @@
 use anyhow::Result;
 use futures_util::StreamExt;
-use num_traits::ToPrimitive;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{self, Duration};
 use tokio::sync::mpsc;
+
+use rust_decimal::Decimal;
 
 use crate::binance::types::{
     DepthSnapshot, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason,
@@ -146,40 +147,38 @@ impl MarketDataEngine {
     }
 
     fn detect_significant_trade(&mut self, trade: &Trade, event_time: u64) {
-        let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
+        let total_volume = self.running_trade_totals.total_volume;
+        let enough_trades = self.running_trade_totals.trade_count >= self.conf.min_trades_for_significance as u64;
+
+        if !enough_trades || total_volume.is_zero() {
+            return;
+        }
+
+        let volume_ratio = trade.quantity / total_volume;
+        if volume_ratio < self.conf.significant_trade_volume_pct {
+            return;
+        }
+
         let notional_value = trade.price * trade.quantity;
+        let volume_pct = volume_ratio * Decimal::ONE_HUNDRED;
+        let reason = SignificanceReason::HighVolumePercent(volume_pct);
 
-        let reason = self
-            .recent_trades
-            .len()
-            .ge(&self.conf.min_trades_for_significance)
-            .then(|| {
-                let one_min_volume = self.running_trade_totals.total_volume.to_f64().unwrap_or(0.0);
+        self.significant_trades
+            .push_back(SignificantTrade::new(trade.clone(), notional_value, reason));
 
-                (one_min_volume > 0.0)
-                    .then(|| trade_qty / one_min_volume)
-                    .filter(|&ratio| ratio >= self.conf.significant_trade_volume_pct)
-                    .map(|ratio| SignificanceReason::HighVolumePercent(ratio * 100.0))
-            })
-            .flatten();
+        // Prune significant trades older than retention window
+        let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
+        while self
+            .significant_trades
+            .front()
+            .is_some_and(|t| t.trade.trade_time < cutoff)
+        {
+            self.significant_trades.pop_front();
+        }
 
-        if let Some(significance_reason) = reason {
-            self.significant_trades.push_back(SignificantTrade::new(
-                trade.clone(),
-                notional_value,
-                significance_reason,
-            ));
-
-            // Prune old significant trades
-            let cutoff =
-                event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
-            while let Some(oldest) = self.significant_trades.front() {
-                if oldest.trade.trade_time < cutoff {
-                    self.significant_trades.pop_front();
-                } else {
-                    break;
-                }
-            }
+        // Keep only the most recent N significant trades for display
+        while self.significant_trades.len() > self.conf.significant_trades_display_count {
+            self.significant_trades.pop_front();
         }
     }
 
@@ -202,6 +201,8 @@ impl MarketDataEngine {
             } else {
                 break;
             }
+
+            // Important!!: might seem like you would want to prune trades that won't be displayed, but we need the full 1-minute window to accurately calculate significance of other trades and also metrics!
         }
 
         self.detect_significant_trade(&received.trade, event_time);
