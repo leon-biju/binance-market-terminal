@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     let scaler = Scaler::new(tick_size, step_size);
 
     let (engine, command_tx, state) =
-        MarketDataEngine::new(symbol.clone(), snapshot_data, scaler.clone(), conf.clone())?;
+        MarketDataEngine::prepare(symbol.clone(), snapshot_data, scaler.clone(), conf.clone())?;
 
     // ── CPU profiler: pprof sampling ──
     let guard = ProfilerGuardBuilder::default()

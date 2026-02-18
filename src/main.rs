@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
     let (engine, command_tx, state) =
-        MarketDataEngine::new(symbol, snapshot, scaler, conf.clone())?;
+        MarketDataEngine::prepare(symbol, snapshot, scaler, conf.clone())?;
 
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {

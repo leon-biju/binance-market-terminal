@@ -49,7 +49,7 @@ pub struct MarketDataEngine {
 }
 
 impl MarketDataEngine {
-    pub fn new(
+    pub fn prepare(
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
