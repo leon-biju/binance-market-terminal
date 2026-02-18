@@ -93,6 +93,7 @@ impl MarketDataEngine {
         Ok((engine, command_tx, state))
     }
 
+    #[tracing::instrument(level = "trace", skip_all, name = "engine::publish_snapshot")]
     fn publish_snapshot(&self) {
         let snapshot = MarketSnapshot {
             book: self.book.clone(),
@@ -178,6 +179,7 @@ impl MarketDataEngine {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip_all, name = "engine::handle_ws_trade")]
     fn handle_ws_trade(&mut self, received: ReceivedTrade) {
         self.total_trades += 1;
         self.update_rate_counter();
@@ -212,6 +214,7 @@ impl MarketDataEngine {
         self.publish_snapshot();
     }
 
+    #[tracing::instrument(level = "trace", skip_all, name = "engine::handle_ws_depth_update")]
     async fn handle_ws_depth_update(&mut self, received: ReceivedDepthUpdate) -> Result<()> {
         self.update_rate_counter();
         let event_time = received.update.event_time;

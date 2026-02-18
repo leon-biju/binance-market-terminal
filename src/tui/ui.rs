@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
+#[tracing::instrument(level = "trace", skip_all, name = "tui::render")]
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let snapshot = app_data.state.load();
 

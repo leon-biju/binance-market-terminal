@@ -56,6 +56,7 @@ impl MarketMetrics {
         }
     }
     // Compute only orderbook-related metrics
+    #[tracing::instrument(level = "trace", skip_all, name = "metrics::compute_book_metrics")]
     pub fn compute_book_metrics(
         &mut self,
         book: &OrderBook,
@@ -78,6 +79,7 @@ impl MarketMetrics {
         self.orderbook_network_lag_ms = Some(network_lag);
     }
 
+    #[tracing::instrument(level = "trace", skip_all, name = "metrics::compute_trade_metrics")]
     pub fn compute_trade_metrics(
         &mut self,
         recent_trades: &VecDeque<Trade>,

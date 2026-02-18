@@ -6,6 +6,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::backend::TestBackend;
 use std::io;
 use std::sync::Arc;
 
@@ -28,6 +29,15 @@ impl App {
             update_interval_ms: 500,
             start_time: std::time::Instant::now(),
         }
+    }
+
+    // renders a single frame to a headless TestBackend (no terminal needed)
+    // used by the profiling binary to exercise the full render path
+    pub fn _render_headless(&self) -> io::Result<()> {
+        let backend = TestBackend::new(180, 50);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.draw(|f| super::ui::render(f, self))?;
+        Ok(())
     }
 
     pub async fn run(&mut self) -> io::Result<()> {

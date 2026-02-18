@@ -1,7 +1,7 @@
-//dont touch this file
 use anyhow::Result;
 use num_traits::Zero;
 use std::collections::BTreeMap;
+use tracing::instrument;
 
 use crate::binance::types::{DepthSnapshot, DepthUpdate};
 use crate::book::scaler;
@@ -15,6 +15,7 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
+    #[instrument(skip_all, level = "trace", name = "orderbook::from_snapshot")]
     pub fn from_snapshot(snapshot: DepthSnapshot, scaler: &scaler::Scaler) -> Result<Self> {
         let mut bids = BTreeMap::new();
         let mut asks = BTreeMap::new();
@@ -42,6 +43,7 @@ impl OrderBook {
         Ok(Self { bids, asks })
     }
 
+    #[instrument(skip_all, level = "trace", name = "orderbook::apply_update")]
     pub fn apply_update(&mut self, update: &DepthUpdate, scaler: &scaler::Scaler) -> Result<()> {
         for [price, qty] in &update.b {
             let pt = scaler
@@ -95,6 +97,7 @@ impl OrderBook {
         }
     }
 
+    #[instrument(skip_all, level = "trace", name = "orderbook::top_n_depth")]
     pub fn top_n_depth(&self, n: usize) -> (Vec<RawDepthLevel>, Vec<RawDepthLevel>) {
         let best_n_bids: Vec<RawDepthLevel> = self
             .bids
@@ -114,6 +117,7 @@ impl OrderBook {
         (best_n_bids, best_n_asks)
     }
 
+    #[instrument(skip_all, level = "trace", name = "orderbook::imbalance_ratio")]
     pub fn imbalance_ratio(&self, levels: usize) -> Option<f64> {
         let (bids, asks) = self.top_n_depth(levels);
 
