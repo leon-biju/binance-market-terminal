@@ -15,7 +15,7 @@ use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
 use crate::book::sync::{SyncOutcome, SyncState};
 use crate::config;
-use crate::engine::metrics::MarketMetrics;
+use crate::engine::metrics::{MarketMetrics, RunningTradeTotals};
 use crate::engine::state::{MarketSnapshot, MarketState};
 
 pub enum EngineCommand {
@@ -41,6 +41,8 @@ pub struct MarketDataEngine {
 
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
+
+    running_trade_totals: RunningTradeTotals,
 
     update_counter: u64,
     last_rate_calc_time: std::time::Instant,
@@ -85,6 +87,8 @@ impl MarketDataEngine {
 
             command_tx: command_tx.clone(),
             command_rx,
+
+            running_trade_totals: RunningTradeTotals::default(),
 
             update_counter: 0,
             last_rate_calc_time: std::time::Instant::now(),
@@ -150,11 +154,7 @@ impl MarketDataEngine {
             .len()
             .ge(&self.conf.min_trades_for_significance)
             .then(|| {
-                let one_min_volume: f64 = self
-                    .recent_trades
-                    .iter()
-                    .map(|t| t.quantity.to_f64().unwrap_or(0.0))
-                    .sum();
+                let one_min_volume = self.running_trade_totals.total_volume.to_f64().unwrap_or(0.0);
 
                 (one_min_volume > 0.0)
                     .then(|| trade_qty / one_min_volume)
@@ -192,10 +192,12 @@ impl MarketDataEngine {
         let received_at = received.received_at;
         let cutoff_time = event_time.saturating_sub(60_000);
 
+        self.running_trade_totals.add(&received.trade);
         self.recent_trades.push_back(received.trade.clone());
 
         while let Some(oldest) = self.recent_trades.front() {
             if oldest.trade_time < cutoff_time {
+                self.running_trade_totals.remove(oldest);
                 self.recent_trades.pop_front();
             } else {
                 break;
@@ -204,9 +206,9 @@ impl MarketDataEngine {
 
         self.detect_significant_trade(&received.trade, event_time);
 
-        //update metrics in place
         self.metrics.compute_trade_metrics(
-            &self.recent_trades,
+            &self.running_trade_totals,
+            self.recent_trades.back(),
             self.total_trades,
             event_time,
             received_at,

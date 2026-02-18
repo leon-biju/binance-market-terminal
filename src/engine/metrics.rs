@@ -1,11 +1,45 @@
 use rust_decimal::Decimal;
-use std::collections::VecDeque;
 use std::time;
 
 use crate::{
     binance::types::Trade,
     book::{orderbook::OrderBook, scaler::Scaler},
 };
+
+// running totals for the 1-minute trade window.
+// Updated incrementally as trades get added/pruned
+
+#[derive(Clone, Debug, Default)]
+pub struct RunningTradeTotals {
+    pub total_volume: Decimal,
+    pub total_notional: Decimal,
+    pub trade_count: u64,
+    pub buy_count: u64,
+}
+
+impl RunningTradeTotals {
+    /// use when new trade enters window.
+    #[inline]
+    pub fn add(&mut self, trade: &Trade) {
+        self.total_volume += trade.quantity;
+        self.total_notional += trade.quantity * trade.price;
+        self.trade_count += 1;
+        if !trade.is_buyer_maker {
+            self.buy_count += 1;
+        }
+    }
+
+    // use when a trade ages out of the 1-minute window.
+    #[inline]
+    pub fn remove(&mut self, trade: &Trade) {
+        self.total_volume -= trade.quantity;
+        self.total_notional -= trade.quantity * trade.price;
+        self.trade_count -= 1;
+        if !trade.is_buyer_maker {
+            self.buy_count -= 1;
+        }
+    }
+}
 
 fn compute_latencies(event_time: u64, received_at: time::Instant) -> (u64, u64) {
     let now_ms = time::SystemTime::now()
@@ -82,31 +116,26 @@ impl MarketMetrics {
     #[tracing::instrument(level = "trace", skip_all, name = "metrics::compute_trade_metrics")]
     pub fn compute_trade_metrics(
         &mut self,
-        recent_trades: &VecDeque<Trade>,
+        running_total: &RunningTradeTotals,
+        last_trade: Option<&Trade>,
         total_trades: u64,
         event_time: u64,
         received_at: std::time::Instant,
     ) {
-        let last_trade = recent_trades.back();
         self.last_price = last_trade.map(|t| t.price);
         self.last_qty = last_trade.map(|t| t.quantity);
 
-        self.trade_count_1m = recent_trades.iter().count() as u64;
+        self.trade_count_1m = running_total.trade_count;
+        self.volume_1m = running_total.total_volume;
 
-        self.volume_1m = recent_trades.iter().map(|t| t.quantity).sum();
-
-        let volume_price_sum_1m: Decimal = recent_trades.iter().map(|t| t.quantity * t.price).sum();
-
-        let buy_count_1m = recent_trades.iter().filter(|t| !t.is_buyer_maker).count() as u64;
-
-        self.buy_ratio_1m = if self.trade_count_1m > 0 {
-            Some(buy_count_1m as f64 / self.trade_count_1m as f64)
+        self.buy_ratio_1m = if running_total.trade_count > 0 {
+            Some(running_total.buy_count as f64 / running_total.trade_count as f64)
         } else {
             None
         };
 
-        self.vwap_1m = if self.volume_1m > Decimal::ZERO {
-            Some(volume_price_sum_1m / self.volume_1m)
+        self.vwap_1m = if running_total.total_volume > Decimal::ZERO {
+            Some(running_total.total_notional / running_total.total_volume)
         } else {
             None
         };
