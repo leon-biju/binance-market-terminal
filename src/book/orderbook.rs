@@ -119,22 +119,9 @@ impl OrderBook {
 
     #[instrument(skip_all, level = "trace", name = "orderbook::imbalance_ratio")]
     pub fn imbalance_ratio(&self, levels: usize) -> Option<f64> {
-        let (bids, asks) = self.top_n_depth(levels);
-
-        if bids.is_empty() || asks.is_empty() {
-            return None;
-        }
-
-        let bid_volume: u64 = bids.iter().map(|(_, qty)| *qty).sum();
-
-        let ask_volume: u64 = asks.iter().map(|(_, qty)| *qty).sum();
-
-        let total_volume = bid_volume + ask_volume;
-
-        if total_volume == 0 {
-            return None;
-        }
-
-        Some(bid_volume as f64 / total_volume as f64)
+        let bid_volume: u64 = self.bids.iter().rev().take(levels).map(|(_, qty)| *qty).sum();
+        let ask_volume: u64 = self.asks.iter().take(levels).map(|(_, qty)| *qty).sum();
+        let total = bid_volume + ask_volume;
+        (total > 0).then(|| bid_volume as f64 / total as f64)
     }
 }
