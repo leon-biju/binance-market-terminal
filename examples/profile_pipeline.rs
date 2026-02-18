@@ -7,7 +7,7 @@
 /// Usage:
 ///   cargo run --example profile_pipeline --release -- BTCUSDT [duration_secs]
 ///
-/// Defaults: symbol=BTCUSDT, duration=30s
+/// Defaults: symbol=BTCUSDT (its the most popular stream i think deal with it), duration=30s
 use anyhow::Result;
 use binance_market_terminal::{
     binance::{exchange_info, snapshot},
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     let scaler = Scaler::new(tick_size, step_size);
 
     let (engine, command_tx, state) =
-        MarketDataEngine::new(symbol.clone(), snapshot_data, scaler, conf.clone())?;
+        MarketDataEngine::new(symbol.clone(), snapshot_data, scaler.clone(), conf.clone())?;
 
     // ── CPU profiler: pprof sampling ──
     let guard = ProfilerGuardBuilder::default()
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
         // Detect first render with live (non-syncing) data
         if first_live_render.is_none() {
             let snap = app.state.load();
-            if !snap.is_syncing && snap.book.best_bid().is_some() {
+            if !snap.is_syncing && snap.top_n_depth(&scaler).0.len() > 0 {
                 first_live_render = Some(profile_start.elapsed());
                 println!(
                     "   ✓ First live data rendered at {:.1}ms",

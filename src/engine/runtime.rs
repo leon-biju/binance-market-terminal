@@ -60,8 +60,10 @@ impl MarketDataEngine {
         let mut sync_state = SyncState::default();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler)?;
+        let (top_n_bids, top_n_asks) = book.top_n_depth(conf.orderbook_depth_display_count);
         let state = Arc::new(MarketState::new(
-            book.clone(),
+            top_n_bids,
+            top_n_asks,
             symbol.clone(),
             scaler.clone(),
         ));
@@ -95,8 +97,10 @@ impl MarketDataEngine {
 
     #[tracing::instrument(level = "trace", skip_all, name = "engine::publish_snapshot")]
     fn publish_snapshot(&self) {
+        let (top_n_bids, top_n_asks) = self.book.top_n_depth(self.conf.orderbook_depth_display_count);
         let snapshot = MarketSnapshot {
-            book: self.book.clone(),
+            top_n_bids,
+            top_n_asks,
             metrics: self.metrics.clone(),
             recent_trades: self.recent_trades.clone(),
             significant_trades: self.significant_trades.clone(),
