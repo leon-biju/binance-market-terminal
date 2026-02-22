@@ -7,7 +7,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img width="2524" height="1381" alt="screenshot-2026-01-17_18-29-29" src="https://github.com/user-attachments/assets/5621a234-4ff5-473e-aa09-12c03c328ea1" />
+<img width="2524" height="1381" alt="GIF playback of program running" src="https://github.com/user-attachments/assets/1a8c1950-050d-4a92-8c71-5f6b0ee2ab1f" />
 
 </div>
 
