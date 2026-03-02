@@ -26,7 +26,7 @@ A low-latency market data processing system that ingests and displays live L2 or
 
 ### Disclaimer
 
-> This project is not affiliated with or endorsed by Binance. It is a toy project intended for **educational and research purposes only**.
+> This project is not affiliated with or endorsed by Binance. It is a project intended for **educational and research purposes only**.
 
 ---
 
@@ -38,58 +38,10 @@ git clone https://github.com/leon-biju/binance-market-terminal.git
 cd binance-market-terminal
 cargo build --release
 
-# Run for any Binance trading pair
+# Run for any Binance trading pair e.g. BTCUSDT
 ./target/release/binance-market-terminal BTCUSDT
 ```
-
-<details>
-<summary><strong>System Dependencies (Linux)</strong></summary>
-
-```bash
-# Debian/Ubuntu
-sudo apt-get install pkg-config libssl-dev
-
-# Fedora/RHEL
-sudo dnf install openssl-devel
-```
-
-</details>
-
 ---
-
-## Architecture
-
-### System Design
-
-<!-- TODO: Add architecture diagram here -->
-<!-- ![Architecture Diagram](docs/assets/architecture.png) -->
-
-The engine employs a **single-writer, multiple-reader** pattern optimized for high-frequency updates:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Market Data Engine                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-│  │   Binance    │    │     Sync     │    │    Orderbook     │   │
-│  │  WebSocket   │───▶│    Layer     │───▶│   (Workspace)    │   │
-│  └──────────────┘    └──────────────┘    └───────┬──────────┘   │
-│         │                   │                    │              │
-│         │                   │              ┌─────▼─────────┐    │
-│         │                   │              │  ArcSwap      │    │
-│  ┌──────▼──────┐     ┌──────▼──────┐       │ (Published)   │    │
-│  │   Binance   │     │    Gap      │       └─────┬─────────┘    │
-│  │  REST API   │◀────│  Recovery   │             │              │
-│  └─────────────┘     └─────────────┘             │              │
-│                                                  │              │
-└──────────────────────────────────────────────────┼──────────────┘
-                                                   │
-                                            ┌──────▼──────┐
-                                            │     TUI     │
-                                            │  (Readers)  │
-                                            └─────────────┘
-```
 
 ### Core Components
 
@@ -102,11 +54,11 @@ The engine employs a **single-writer, multiple-reader** pattern optimized for hi
 
 ### Data Flow
 
-1. **Initial Snapshot** — Fetched from Binance REST API to bootstrap the orderbook
-2. **WebSocket Stream** — Continuous depth updates parsed and queued
-3. **Synchronization** — Updates validated against sequence IDs, gaps trigger recovery
-4. **Application** — Valid updates applied to workspace, then atomically published
-5. **Consumption** — TUI reads published snapshot with zero contention
+1. **Initial Snapshot**: Fetched from Binance REST API to add starting data for the orderbook
+2. **WebSocket Stream**: Combined depth and trade updates parsed. Depth streams get queued to preserve order whereas trade streams go straight through
+4. **Synchronization**: Depth updates are validated against sequence IDs and trigger recovery if necessary
+5. **Application**: Valid updates applied to workspace, then atomically published
+6. **Consumption**: TUI reads published snapshot at fixed intervals
 
 ### Gap Recovery Strategy
 
@@ -220,24 +172,15 @@ RUST_LOG=trace cargo run -- BTCUSDT
 
 ---
 
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| TLS/SSL errors | Install OpenSSL dev libraries (see Quick Start) |
-| Connection timeouts | Check internet; Binance may be rate-limiting |
-| High latency | Expected for non-Asian deployments (~100-250ms from UK deployment) |
-
----
 
 ## Contributing
 
-Contributions are welcome. Please follow these steps:
+Fel free to contribute. Just follow these steps:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/feature-name`)
+3. Commit changes (`git commit -m 'Add feature'`)
+4. Push to the branch (`git push origin feature/feature-name`)
 5. Open a Pull Request
 
 ### Development Guidelines
